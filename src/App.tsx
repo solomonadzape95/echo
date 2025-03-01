@@ -2,8 +2,10 @@ import {
   createBrowserRouter,
   RouterProvider,
 } from "react-router-dom";
+
 import LandingPage from "./pages/LandingPage";
 import CallScreen from "./pages/CallScreen";
+import { UserProvider } from "./contexts/UserContext";
 
 const router = createBrowserRouter([
   {
@@ -16,5 +18,11 @@ const router = createBrowserRouter([
   },
 ]);
 export function App() {
-  return <RouterProvider router={router} />
+  return <>
+    
+      <UserProvider>
+        <RouterProvider router={router} />
+      </UserProvider>
+
+  </>
 }

@@ -1,12 +1,16 @@
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SettingsDialog } from "../components/settings/settings-dialog";
+import { useUser } from "@/contexts/UserContext";
 
 export default function LandingPage() {
+  const { userId } = useUser();
+
   return <div style={{ backgroundImage: `url('../src/assets/hero.jpg')` }} className="w-screen h-screen bg-cover relative flex justify-center items-center">
     <div className="absolute top-0 right-0 bg-[#000000]/20 w-full h-full"></div>
     <span className="flex items-center justify-between max-w-7xl mx-auto fixed top-10 right-20 left-20">
       <img src="../src/assets/logo.png" width={100} />
+      <span>{userId}</span>
       <SettingsDialog />
     </span>
     <div className="p-5 relative z-10 text-white font text-center w-6xl min-h-[30vh] flex flex-col justify-evenly gap-16">
