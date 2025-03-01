@@ -2,7 +2,8 @@ import {
   createBrowserRouter,
   RouterProvider,
 } from "react-router-dom";
-import LandingPage from "./components/LandingPage";
+import LandingPage from "./pages/LandingPage";
+import CallScreen from "./pages/CallScreen";
 
 const router = createBrowserRouter([
   {
@@ -10,8 +11,8 @@ const router = createBrowserRouter([
     element: <LandingPage />,
   },
   {
-    path: "/home",
-    element: <div>Hello Home!</div>,
+    path: "/join/:id",
+    element: <CallScreen />,
   },
 ]);
 export function App() {

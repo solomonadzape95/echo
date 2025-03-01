@@ -1,6 +1,6 @@
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { SettingsDialog } from "./settings/settings-dialog";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { SettingsDialog } from "../components/settings/settings-dialog";
 
 export default function LandingPage() {
   return <div style={{ backgroundImage: `url('../src/assets/hero.jpg')` }} className="w-screen h-screen bg-cover relative flex justify-center items-center">
