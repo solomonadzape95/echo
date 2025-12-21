@@ -9,6 +9,7 @@ import classRoute from './routes/class'
 import verifyEligibility from './routes/verify-eligibility'
 import vote from './routes/vote'
 import checkLedger from './routes/check-ledger'
+import auth from './routes/auth'
 
 const app = new Hono()
 
@@ -26,5 +27,6 @@ app.route('/admin', admin)
 app.route('/verify-eligibility', verifyEligibility)
 app.route('/vote', vote)
 app.route('/check-ledger', checkLedger)
+app.route('/auth', auth)
 
 export default app
