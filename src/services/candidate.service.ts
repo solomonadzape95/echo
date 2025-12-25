@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../db/db'
 import { candidates } from '../models/candidate.schema'
 import { offices } from '../models/office.schema'
@@ -36,8 +36,10 @@ export class CandidateService {
     const [existing] = await db
       .select()
       .from(candidates)
-      .where(eq(candidates.office, input.officeId))
-      .where(eq(candidates.voterId, input.voterId))
+      .where(and(
+        eq(candidates.office, input.officeId),
+        eq(candidates.voterId, input.voterId)
+      ))
       .limit(1)
 
     if (existing) {
