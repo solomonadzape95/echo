@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { sql } from 'drizzle-orm'
 import voter from './routes/voter'
 import admin from './routes/admin'
 import candidate from './routes/candidate'
@@ -19,6 +20,46 @@ const app = new Hono()
 
 app.get('/', (c) => {
   return c.text('Hello Hono!')
+})
+
+// Health check endpoint
+app.get('/health', async (c) => {
+  try {
+    // Basic health check - server is running
+    const health = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      service: 'echo-voting-api',
+    }
+
+    // Optional: Check database connectivity
+    try {
+      const { db } = await import('./db/db')
+      // Simple query to verify database connection
+      await db.execute(sql`SELECT 1`)
+      return c.json({ ...health, database: 'connected' }, 200)
+    } catch (dbError: any) {
+      // Server is healthy but database is not
+      return c.json(
+        {
+          ...health,
+          database: 'disconnected',
+          error: dbError.message,
+        },
+        503 // Service Unavailable
+      )
+    }
+  } catch (error: any) {
+    return c.json(
+      {
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      },
+      500
+    )
+  }
 })
 
 app.route('/voter', voter)
