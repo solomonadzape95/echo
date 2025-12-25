@@ -5,6 +5,7 @@ import voterRoute from './voter'
 import departmentRoute from './department'
 import candidateRoute from './candidate'
 import facultyRoute from './faculty'
+import masterlistRoute from './masterlist'
 
 const admin = new Hono().basePath("/admin")
 
@@ -14,5 +15,6 @@ admin.route("/voter", voterRoute)
 admin.route("/department", departmentRoute)
 admin.route("/candidate", candidateRoute)
 admin.route("/faculty", facultyRoute)
+admin.route("/masterlist", masterlistRoute)
 
 export default admin
