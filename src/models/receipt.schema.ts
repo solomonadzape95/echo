@@ -4,7 +4,8 @@ import { elections } from './election.schema'
 
 export const receipts = pgTable('receipts', {
     id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
-    receiptHash: varchar('receipt_hash', {length: 255}).notNull(),
+    receiptCode: varchar('receipt_code', {length: 50}).notNull().unique(), // Short code for receipt
     election: uuid('election').references(() => elections.id).notNull(),
+    voteId: uuid('vote').notNull(), // Link receipt to vote (FK reference added via migration)
     ...timestamps,
 }) 

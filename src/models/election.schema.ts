@@ -11,7 +11,7 @@ export const elections = pgTable('elections', {
     status: electionStatus('status').default('pending').notNull(),
     startDate: timestamp('start_date').notNull(),
     endDate: timestamp('end_date').notNull(),
-    description: text(' description').notNull(),
+    description: text('description').notNull(),
     domainId: uuid('domain_id').notNull(),
     ...timestamps,
 })
