@@ -1,9 +1,9 @@
-import {Hono} from 'hono'
+import { Hono } from 'hono'
+import { authController } from '../../controllers/auth.controller'
 
 const login = new Hono()
 
-login.get('/', (c) => {
-  return c.text('Hello Login!')
-})
+// POST /auth/login
+login.post('/', (c) => authController.login(c))
 
 export default login

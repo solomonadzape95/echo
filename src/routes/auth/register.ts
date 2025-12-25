@@ -1,9 +1,9 @@
-import {Hono} from 'hono'
+import { Hono } from 'hono'
+import { authController } from '../../controllers/auth.controller'
 
 const register = new Hono()
 
-register.get('/', (c) => {
-  return c.text('Hello Register!')
-})
+// POST /auth/register
+register.post('/', (c) => authController.register(c))
 
 export default register
