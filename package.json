@@ -5,12 +5,18 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "generate:rsa-keys": "node scripts/generate-rsa-keys.js",
+    "seed": "bun run scripts/seed.ts",
+    "cleanup": "bun run scripts/cleanup.ts",
+    "test:voting": "bun run scripts/test-voting.ts",
+    "test:services": "bun run scripts/test-services.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "bigint-crypto-utils": "^3.3.0",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.1",
     "jose": "^6.1.3",
