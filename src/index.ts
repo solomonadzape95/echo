@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { sql } from 'drizzle-orm'
 import voter from './routes/voter'
 import admin from './routes/admin'
@@ -17,6 +18,36 @@ import token from './routes/token'
 import auth from './routes/auth'
 
 const app = new Hono()
+
+// Configure CORS
+app.use('*', cors({
+  origin: (origin) => {
+    // Allow requests from frontend dev server
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      // Add production origins here when deploying
+      // 'https://yourdomain.com',
+    ]
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return '*'
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return origin
+    }
+    
+    // Default: allow all origins in development
+    // In production, you might want to return undefined to deny
+    return process.env.NODE_ENV === 'production' ? undefined : origin
+  },
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length'],
+  credentials: true, // Allow cookies to be sent
+  maxAge: 86400, // 24 hours
+}))
 
 app.get('/', (c) => {
   return c.text('Hello Hono!')
