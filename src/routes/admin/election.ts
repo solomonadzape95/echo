@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { electionController } from '../../controllers/election.controller'
+import { resultController } from '../../controllers/result.controller'
 import { adminMiddleware } from '../../middleware/admin.middleware'
 
 const election = new Hono()
@@ -33,5 +34,8 @@ election.put('/:id', (c) => electionController.update(c))
 
 // DELETE /admin/election/:id - Delete election
 election.delete('/:id', (c) => electionController.delete(c))
+
+// POST /admin/election/:id/calculate-results - Calculate and store election results
+election.post('/:id/calculate-results', (c) => resultController.calculateResults(c))
 
 export default election

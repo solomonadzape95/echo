@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { electionController } from '../controllers/election.controller'
+import { resultController } from '../controllers/result.controller'
 import { authMiddleware } from '../middleware/auth.middleware'
 
 const election = new Hono()
@@ -18,6 +19,14 @@ election.get('/by-status', (c) => electionController.getByStatus(c))
 
 // GET /election?domainId=xxx - Get elections by domain (public)
 election.get('/by-domain', (c) => electionController.getByDomain(c))
+
+// GET /election/:id/results/status - Check if results have been calculated (public)
+// Must come before /:id/results to avoid route conflicts
+election.get('/:id/results/status', (c) => resultController.checkResultsStatus(c))
+
+// GET /election/:id/results - Get election results (public - after election ends)
+// Must come before /:id to avoid route conflicts
+election.get('/:id/results', (c) => resultController.getResults(c))
 
 // GET /election/:id - Get election by ID (public)
 election.get('/:id', (c) => electionController.getById(c))
