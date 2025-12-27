@@ -2,6 +2,8 @@ import { eq, and } from 'drizzle-orm'
 import { db } from '../db/db'
 import { masterlist } from '../models/masterlist.schema'
 import { classes } from '../models/class.schema'
+import { departments } from '../models/department.schema'
+import { faculties } from '../models/faculty.schema'
 
 interface StudentInput {
   name: string
@@ -18,6 +20,7 @@ interface UploadResult {
 interface GetAllOptions {
   classId?: string
   activated?: boolean
+  regNumber?: string
 }
 
 export class MasterlistService {
@@ -106,6 +109,10 @@ export class MasterlistService {
       conditions.push(eq(masterlist.activated, options.activated))
     }
 
+    if (options.regNumber) {
+      conditions.push(eq(masterlist.regNo, options.regNumber))
+    }
+
     if (conditions.length > 0) {
       return await db
         .select()
@@ -173,6 +180,84 @@ export class MasterlistService {
       .limit(1)
 
     return student || null
+  }
+
+  /**
+   * Get student by registration number with populated class, department, and faculty
+   */
+  async getByRegNoWithRelations(regNo: string) {
+    try {
+      console.log('[MASTERLIST SERVICE] getByRegNoWithRelations called with regNo:', regNo)
+      
+      const [result] = await db
+        .select({
+          // Masterlist fields
+          id: masterlist.id,
+          regNo: masterlist.regNo,
+          name: masterlist.name,
+          classId: masterlist.class,
+          activated: masterlist.activated,
+          createdAt: masterlist.createdAt,
+          updatedAt: masterlist.updatedAt,
+          // Class fields
+          classLevel: classes.level,
+          classId_full: classes.id,
+          // Department fields
+          departmentId: departments.id,
+          departmentName: departments.name,
+          // Faculty fields (from class directly)
+          facultyId: faculties.id,
+          facultyName: faculties.name,
+        })
+        .from(masterlist)
+        .leftJoin(classes, eq(masterlist.class, classes.id))
+        .leftJoin(departments, eq(classes.department, departments.id))
+        .leftJoin(faculties, eq(classes.faculty, faculties.id))
+        .where(eq(masterlist.regNo, regNo))
+        .limit(1)
+
+      console.log('[MASTERLIST SERVICE] Query result:', result ? 'Found' : 'Not found')
+
+      if (!result) {
+        console.log('[MASTERLIST SERVICE] No record found for regNo:', regNo)
+        return null
+      }
+
+      // Transform to match frontend expectations
+      const nameParts = result.name.trim().split(/\s+/)
+      const firstName = nameParts[0] || ''
+      const lastName = nameParts.slice(1).join(' ') || ''
+
+      const transformed = {
+        id: result.id,
+        regNumber: result.regNo,
+        firstName,
+        lastName,
+        classId: result.classId,
+        activated: result.activated,
+        class: result.classId_full ? {
+          id: result.classId_full,
+          name: result.classLevel,
+          department: result.departmentId ? {
+            id: result.departmentId,
+            name: result.departmentName,
+            faculty: result.facultyId ? {
+              id: result.facultyId,
+              name: result.facultyName,
+            } : undefined,
+          } : undefined,
+        } : undefined,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt,
+      }
+
+      console.log('[MASTERLIST SERVICE] Transformed record:', JSON.stringify(transformed, null, 2))
+      return transformed
+    } catch (error: any) {
+      console.error('[MASTERLIST SERVICE] Error in getByRegNoWithRelations:', error)
+      console.error('[MASTERLIST SERVICE] Error stack:', error.stack)
+      throw error
+    }
   }
 }
 

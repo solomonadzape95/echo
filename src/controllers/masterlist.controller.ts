@@ -63,10 +63,12 @@ export class MasterlistController {
     try {
       const classId = c.req.query('classId')
       const activated = c.req.query('activated')
+      const regNumber = c.req.query('regNumber')
 
       const entries = await masterlistService.getAll({
         classId: classId || undefined,
         activated: activated === 'true' ? true : activated === 'false' ? false : undefined,
+        regNumber: regNumber || undefined,
       })
 
       return c.json({
@@ -77,6 +79,51 @@ export class MasterlistController {
       return c.json({
         success: false,
         message: error.message || 'Failed to fetch masterlist',
+      }, 500)
+    }
+  }
+
+  /**
+   * Verify registration number (public endpoint)
+   * GET /masterlist/verify?regNumber=xxx
+   */
+  async verify(c: Context) {
+    try {
+      console.log('[MASTERLIST VERIFY] Request received')
+      const regNumber = c.req.query('regNumber')
+      console.log('[MASTERLIST VERIFY] regNumber from query:', regNumber)
+
+      if (!regNumber) {
+        console.log('[MASTERLIST VERIFY] Missing regNumber parameter')
+        return c.json({
+          success: false,
+          message: 'regNumber query parameter is required',
+        }, 400)
+      }
+
+      console.log('[MASTERLIST VERIFY] Calling service with regNumber:', regNumber)
+      const record = await masterlistService.getByRegNoWithRelations(regNumber)
+      console.log('[MASTERLIST VERIFY] Service returned:', record ? 'Found record' : 'No record found')
+
+      if (!record) {
+        console.log('[MASTERLIST VERIFY] Record not found for regNumber:', regNumber)
+        return c.json({
+          success: false,
+          message: 'Registration number not found in masterlist',
+        }, 404)
+      }
+
+      console.log('[MASTERLIST VERIFY] Returning success response')
+      return c.json({
+        success: true,
+        data: record,
+      }, 200)
+    } catch (error: any) {
+      console.error('[MASTERLIST VERIFY] Error:', error)
+      console.error('[MASTERLIST VERIFY] Error stack:', error.stack)
+      return c.json({
+        success: false,
+        message: error.message || 'Failed to verify registration number',
       }, 500)
     }
   }

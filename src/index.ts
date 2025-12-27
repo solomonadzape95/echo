@@ -16,6 +16,8 @@ import receipt from './routes/receipt'
 import issuance from './routes/issuance'
 import token from './routes/token'
 import auth from './routes/auth'
+import masterlist from './routes/masterlist'
+import dashboard from './routes/dashboard'
 
 const app = new Hono()
 
@@ -48,6 +50,35 @@ app.use('*', cors({
   credentials: true, // Allow cookies to be sent
   maxAge: 86400, // 24 hours
 }))
+
+// Add request logging middleware (must be before routes)
+app.use('*', async (c, next) => {
+  const start = Date.now()
+  const method = c.req.method
+  const path = c.req.path
+  const url = c.req.url
+  
+  console.log(`[${new Date().toISOString()}] ${method} ${url}`)
+  
+  try {
+    await next()
+    const duration = Date.now() - start
+    console.log(`[${new Date().toISOString()}] ${method} ${path} - ${c.res.status} (${duration}ms)`)
+  } catch (error: any) {
+    const duration = Date.now() - start
+    console.error(`[${new Date().toISOString()}] ${method} ${path} - ERROR (${duration}ms):`, error)
+    throw error
+  }
+})
+
+// Add error handler
+app.onError((err, c) => {
+  console.error('[ERROR HANDLER]', err)
+  return c.json({
+    success: false,
+    message: err.message || 'Internal server error',
+  }, 500)
+})
 
 app.get('/', (c) => {
   return c.text('Hello Hono!')
@@ -108,5 +139,16 @@ app.route('/receipt', receipt)
 app.route('/issuance', issuance)
 app.route('/token', token)
 app.route('/auth', auth)
+app.route('/masterlist', masterlist)
+app.route('/dashboard', dashboard)
 
-export default app
+// For Bun's --hot flag, export server config instead of calling Bun.serve()
+// This allows hot reloading to work properly
+const port = process.env.PORT ? parseInt(process.env.PORT) : 3001
+
+console.log(`🚀 Server starting on http://localhost:${port}`)
+
+export default {
+  port,
+  fetch: app.fetch,
+}
