@@ -234,37 +234,37 @@ export class AuthService {
       }
     } else {
       // Fetch voter data
-      const [user] = await db
-        .select()
-        .from(voters)
-        .where(eq(voters.id, decoded.id))
-        .limit(1)
-      
-      if (!user) {
-        throw new Error('User not found')
-      }
-      
-      // Create new JWT payload
-      const jwtPayload: JwtPayload = {
+    const [user] = await db
+      .select()
+      .from(voters)
+      .where(eq(voters.id, decoded.id))
+      .limit(1)
+    
+    if (!user) {
+      throw new Error('User not found')
+    }
+    
+    // Create new JWT payload
+    const jwtPayload: JwtPayload = {
+      id: user.id,
+      regNumber: user.regNumber,
+      username: user.username,
+      classId: user.class,
+    }
+    
+    // Generate new access token
+    const accessToken = await generateAccessToken(jwtPayload)
+    
+    return {
+      accessToken,
+      user: {
         id: user.id,
         regNumber: user.regNumber,
         username: user.username,
-        classId: user.class,
-      }
-      
-      // Generate new access token
-      const accessToken = await generateAccessToken(jwtPayload)
-      
-      return {
-        accessToken,
-        user: {
-          id: user.id,
-          regNumber: user.regNumber,
-          username: user.username,
-          class: user.class,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-        },
+        class: user.class,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
         isAdmin: false,
       }
     }
