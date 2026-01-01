@@ -1,0 +1,125 @@
+{
+  "class_level_offices": [
+    {
+      "title": "Class Representative",
+      "description": "Leads the class and represents students in meetings"
+    },
+    {
+      "title": "Assistant Class Representative",
+      "description": "Assists the president and acts in their absence"
+    },
+    {
+      "title": "Secretary",
+      "description": "Keeps records, minutes, and handles communication"
+    },
+    {
+      "title": "Assistant Secretary",
+      "description": "Supports the secretary"
+    },
+    {
+      "title": "Treasurer",
+      "description": "Manages class funds and budgets"
+    },
+    {
+      "title": "Financial Secretary",
+      "description": "Keeps detailed financial records"
+    },
+    {
+      "title": "Public Relations Officer",
+      "description": "Handles announcements and publicity"
+    },
+    {
+      "title": "Social / Welfare Officer",
+      "description": "Organizes social activities and oversees student welfare"
+    },
+    {
+      "title": "Sports Director",
+      "description": "Coordinates class sports activities"
+    }
+  ],
+  "department_level_offices": [
+    {
+      "title": "Departmental President",
+      "description": "Heads the department's student body"
+    },
+    {
+      "title": "Vice President",
+      "description": "Assists and substitutes for the president"
+    },
+    {
+      "title": "General Secretary",
+      "description": "Manages documentation and correspondence"
+    },
+    {
+      "title": "Assistant Secretary",
+      "description": "Supports the secretary"
+    },
+    {
+      "title": "Treasurer",
+      "description": "Handles departmental funds"
+    },
+    {
+      "title": "Financial Secretary",
+      "description": "Records income and expenditures"
+    },
+    {
+      "title": "Public Relations Officer",
+      "description": "Manages information dissemination"
+    },
+    {
+      "title": "Welfare Officer",
+      "description": "Addresses student welfare and concerns"
+    },
+    {
+      "title": "Sports Director",
+      "description": "Oversees sports and competitions"
+    },
+    {
+      "title": "Social Director",
+      "description": "Plans departmental events"
+    }
+  ],
+  "faculty_level_offices": [
+    {
+      "title": "Faculty President",
+      "description": "Represents the faculty at the highest student level"
+    },
+    {
+      "title": "Vice President",
+      "description": "Assists the president and coordinates departments"
+    },
+    {
+      "title": "General Secretary",
+      "description": "Oversees records and official communication"
+    },
+    {
+      "title": "Assistant Secretary",
+      "description": "Assists with documentation"
+    },
+    {
+      "title": "Treasurer",
+      "description": "Manages faculty finances"
+    },
+    {
+      "title": "Financial Secretary",
+      "description": "Keeps financial records"
+    },
+    {
+      "title": "Public Relations Officer",
+      "description": "Handles publicity and announcements"
+    },
+    {
+      "title": "Director of Socials",
+      "description": "Organizes faculty-wide events"
+    },
+    {
+      "title": "Director of Sports",
+      "description": "Coordinates faculty sports activities"
+    },
+    {
+      "title": "Welfare Officer",
+      "description": "Handles student welfare across departments"
+    }
+  ]
+}
+

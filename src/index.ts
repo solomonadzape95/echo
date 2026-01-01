@@ -4,8 +4,6 @@ import { sql } from 'drizzle-orm'
 import voter from './routes/voter'
 import admin from './routes/admin'
 import candidate from './routes/candidate'
-import department from './routes/department'
-import faculty from './routes/faculty'
 import election from './routes/election'
 import office from './routes/office'
 import classRoute from './routes/class'
@@ -18,6 +16,12 @@ import token from './routes/token'
 import auth from './routes/auth'
 import masterlist from './routes/masterlist'
 import dashboard from './routes/dashboard'
+import profile from './routes/profile'
+import ballot from './routes/ballot'
+import stats from './routes/stats'
+import enumRoute from './routes/enum'
+import officeTemplate from './routes/office-template'
+import storage from './routes/storage'
 
 const app = new Hono()
 
@@ -126,8 +130,6 @@ app.get('/health', async (c) => {
 
 app.route('/voter', voter)
 app.route('/candidate', candidate)
-app.route('/department', department)
-app.route('/faculty', faculty)
 app.route('/election', election)
 app.route('/office', office)
 app.route('/class', classRoute)
@@ -141,6 +143,12 @@ app.route('/token', token)
 app.route('/auth', auth)
 app.route('/masterlist', masterlist)
 app.route('/dashboard', dashboard)
+app.route('/profile', profile)
+app.route('/ballot', ballot)
+app.route('/stats', stats)
+app.route('/enum', enumRoute)
+app.route('/office-templates', officeTemplate)
+app.route('/admin/storage', storage)
 
 // For Bun's --hot flag, export server config instead of calling Bun.serve()
 // This allows hot reloading to work properly

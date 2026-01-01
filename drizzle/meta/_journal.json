@@ -50,6 +50,20 @@
       "when": 1766676610347,
       "tag": "0006_nice_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1766927643360,
+      "tag": "0007_purple_krista_starr",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1766946649265,
+      "tag": "0008_closed_silver_fox",
+      "breakpoints": true
     }
   ]
 }

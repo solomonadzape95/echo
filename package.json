@@ -11,23 +11,30 @@
     "db:studio": "drizzle-kit studio",
     "generate:rsa-keys": "node scripts/generate-rsa-keys.js",
     "seed": "bun run scripts/seed.ts",
+    "seed:admin": "bun run scripts/seed-admin.ts",
     "cleanup": "bun run scripts/cleanup.ts",
     "test:voting": "bun run scripts/test-voting.ts",
-    "test:services": "bun run scripts/test-services.ts"
+    "test:services": "bun run scripts/test-services.ts",
+    "migrate:enums": "bun run scripts/migrate-to-enums.ts",
+    "migrate:domain-id": "bun run scripts/migrate-domain-id-to-string.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
+    "@supabase/supabase-js": "^2.89.0",
+    "@types/pg": "^8.16.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "bigint-crypto-utils": "^3.3.0",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.1",
     "jose": "^6.1.3",
+    "pg": "^8.16.3",
+    "ws": "^8.18.3",
     "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.8"
   }
 }
