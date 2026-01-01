@@ -113,6 +113,17 @@ export class MasterlistController {
         }, 404)
       }
 
+      // Check if account is already activated
+      if (record.activated) {
+        console.log('[MASTERLIST VERIFY] Record found but already activated')
+        return c.json({
+          success: false,
+          message: 'An account already exists for this registration number',
+          data: record, // Still return the data so frontend can show name/class
+          alreadyExists: true,
+        }, 200)
+      }
+
       console.log('[MASTERLIST VERIFY] Returning success response')
       return c.json({
         success: true,
