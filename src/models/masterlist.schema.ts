@@ -3,7 +3,7 @@ import { classes } from './class.schema'
 import { timestamps } from '../helpers/colums.helpers'
 
 export const masterlist = pgTable('masterlist', {
-    id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
+    id: uuid('id').primaryKey().defaultRandom().notNull(),
     name: varchar('name', {length: 255}).notNull(),
     regNo: varchar('reg_no', {length: 255}).notNull(),
     class: uuid('class').references(() => classes.id).notNull(),

@@ -19,7 +19,7 @@ import { timestamps } from '../helpers/colums.helpers'
  * - calculatedBy: which admin calculated the results
  */
 export const results = pgTable('results', {
-  id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
+  id: uuid('id').primaryKey().defaultRandom().notNull(),
   election: uuid('election').references(() => elections.id).notNull(),
   office: uuid('office').references(() => offices.id).notNull(),
   candidate: uuid('candidate').references(() => candidates.id).notNull(),

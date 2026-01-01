@@ -4,7 +4,7 @@ import { voters } from './voter.schema'
 import { timestamps } from '../helpers/colums.helpers'
 
 export const candidates = pgTable('candidates', {
-    id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
+    id: uuid('id').primaryKey().defaultRandom().notNull(),
     office: uuid('office').references(() => offices.id).notNull(),
     voterId: uuid('voter').references(() => voters.id).notNull(),
     quote: text('quote').default(""),

@@ -3,7 +3,7 @@ import { timestamps } from '../helpers/colums.helpers'
 import { elections } from './election.schema'
 
 export const votes = pgTable('votes', {
-    id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
+    id: uuid('id').primaryKey().defaultRandom().notNull(),
     prevHash: varchar('prev_hash', {length: 255}).notNull(),
     currentHash: varchar('current_hash', {length: 255}).notNull(),
     voteDataHash: varchar('vote_data_hash', {length: 255}).notNull(), // Hash of ballot data (candidate selection)

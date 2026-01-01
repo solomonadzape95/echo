@@ -5,7 +5,7 @@ import { timestamps } from '../helpers/colums.helpers'
 export const adminRoleEnum = pgEnum('admin_role', ['super_admin', 'admin', 'moderator'])
 
 export const admins = pgTable('admins', {
-    id: uuid('id').primaryKey().defaultRandom().notNull().unique(),
+    id: uuid('id').primaryKey().defaultRandom().notNull(),
     username: varchar('username', {length: 255}).notNull().unique(),
     email: varchar('email', {length: 255}).notNull().unique(),
     password: varchar('password', {length: 255}).notNull(), // Hashed password
