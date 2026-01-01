@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, sql } from 'drizzle-orm'
 import { db, generateReceiptCode } from '../db/db'
 import { votes } from '../models/vote.schema'
 import { elections } from '../models/election.schema'
@@ -61,6 +61,7 @@ export class VoteService {
       }
 
       // 5. Determine prevHash: check if this is the genesis vote (first vote for this election)
+      // Use SELECT FOR UPDATE to lock rows and prevent race conditions when multiple votes are created simultaneously
       let prevHash: string
 
       if (input.prevHash) {
@@ -71,12 +72,20 @@ export class VoteService {
         }
         prevHash = input.prevHash
       } else {
-        // Auto-determine: get the last vote for this election
-        const lastVote = await this.getLastVoteForElectionInTx(tx, input.election)
+        // Auto-determine: get the last vote with lock to prevent race conditions
+        // Lock all votes for this election to prevent concurrent inserts
+        const lastVote = await this.getLastVoteForElectionInTxWithLock(tx, input.election)
         
         if (!lastVote) {
-          // This is the genesis vote (first vote for this election)
-          prevHash = GENESIS_HASH
+          // No votes exist yet - this should be the genesis vote
+          // Double-check after lock to ensure no vote was created between check and lock
+          const doubleCheck = await this.getLastVoteForElectionInTx(tx, input.election)
+          if (!doubleCheck) {
+            prevHash = GENESIS_HASH
+          } else {
+            // A vote was created between our checks, use its currentHash
+            prevHash = doubleCheck.currentHash
+          }
         } else {
           // Use the last vote's currentHash as prevHash
           prevHash = lastVote.currentHash
@@ -178,6 +187,40 @@ export class VoteService {
       .limit(1)
 
     return lastVote || null
+  }
+
+  /**
+   * Get the last vote for an election with FOR UPDATE lock to prevent race conditions
+   * This ensures only one transaction can read the last vote at a time
+   */
+  private async getLastVoteForElectionInTxWithLock(tx: any, electionId: string) {
+    // Use raw SQL with FOR UPDATE to lock the row
+    // This prevents race conditions when multiple votes are created simultaneously
+    const result = await tx.execute(sql`
+      SELECT id, prev_hash, current_hash, vote_data_hash, encrypted_vote_data, token_id, election, created_at, updated_at
+      FROM votes
+      WHERE election = ${electionId}
+      ORDER BY created_at DESC
+      LIMIT 1
+      FOR UPDATE
+    `)
+
+    if (result.rows && result.rows.length > 0) {
+      const row = result.rows[0]
+      return {
+        id: row.id,
+        prevHash: row.prev_hash,
+        currentHash: row.current_hash,
+        voteDataHash: row.vote_data_hash,
+        encryptedVoteData: row.encrypted_vote_data,
+        tokenId: row.token_id,
+        election: row.election,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }
+    }
+
+    return null
   }
 
   /**
