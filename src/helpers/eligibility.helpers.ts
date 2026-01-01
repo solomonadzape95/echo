@@ -65,6 +65,12 @@ export async function checkEligibilityByDomain(
   switch (election.type) {
     case 'class':
       // Election is for a specific class
+      if (!election.domainId || !voter.class) {
+        return { 
+          eligible: false, 
+          reason: 'Election domain or voter class is missing' 
+        }
+      }
       if (election.domainId === voter.class) {
         return { eligible: true }
       }
@@ -75,6 +81,12 @@ export async function checkEligibilityByDomain(
 
     case 'department':
       // Election is for a specific department
+      if (!election.domainId || !voterClass.department) {
+        return { 
+          eligible: false, 
+          reason: 'Election domain or voter department is missing' 
+        }
+      }
       if (election.domainId === voterClass.department) {
         return { eligible: true }
       }
@@ -85,6 +97,12 @@ export async function checkEligibilityByDomain(
 
     case 'faculty':
       // Election is for a specific faculty
+      if (!election.domainId || !voterClass.faculty) {
+        return { 
+          eligible: false, 
+          reason: 'Election domain or voter faculty is missing' 
+        }
+      }
       if (election.domainId === voterClass.faculty) {
         return { eligible: true }
       }
@@ -96,7 +114,7 @@ export async function checkEligibilityByDomain(
     default:
       return { 
         eligible: false, 
-        reason: 'Invalid election type' 
+        reason: `Invalid election type: ${election.type}` 
       }
   }
 }

@@ -18,22 +18,28 @@ export class VerifyEligibilityService {
    * @returns Token and public key for blinding
    */
   async verifyAndCreateToken(voterId: string, electionId: string) {
-    // 1. Verify election exists
-    const [election] = await db
-      .select()
-      .from(elections)
-      .where(eq(elections.id, electionId))
-      .limit(1)
+    try {
+      // 1. Verify election exists
+      const [election] = await db
+        .select()
+        .from(elections)
+        .where(eq(elections.id, electionId))
+        .limit(1)
 
-    if (!election) {
-      throw new Error('Election not found')
-    }
+      if (!election) {
+        throw new Error('Election not found')
+      }
 
-    // 2. Verify eligibility by domain matching (class/department/faculty)
-    const eligibility = await checkEligibilityByDomain(voterId, electionId)
-    
-    if (!eligibility.eligible) {
-      throw new Error(`Voter is not eligible to vote in this election: ${eligibility.reason || 'Domain mismatch'}`)
+      // 2. Verify eligibility by domain matching (class/department/faculty)
+      const eligibility = await checkEligibilityByDomain(voterId, electionId)
+      
+      if (!eligibility.eligible) {
+        throw new Error(`Voter is not eligible to vote in this election: ${eligibility.reason || 'Domain mismatch'}`)
+      }
+    } catch (error: any) {
+      console.error('[VERIFY ELIGIBILITY SERVICE] Error in verifyAndCreateToken:', error)
+      console.error('[VERIFY ELIGIBILITY SERVICE] voterId:', voterId, 'electionId:', electionId)
+      throw error
     }
 
     // 3. Check if issuance already exists for this voter and election
@@ -81,7 +87,7 @@ export class VerifyEligibilityService {
 
     // 6. Create new token
     const token = await tokenService.create({
-      electionId,
+      election: electionId,
       tokenHash,
     })
 

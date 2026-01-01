@@ -36,6 +36,15 @@ export class VerifyEligibilityController {
         }, 400)
       }
 
+      // Validate electionId is a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!uuidRegex.test(electionId)) {
+        return c.json({
+          success: false,
+          message: 'Invalid electionId format. Must be a valid UUID',
+        }, 400)
+      }
+
       // Verify eligibility and create token
       const result = await verifyEligibilityService.verifyAndCreateToken(
         user.id,
@@ -51,6 +60,8 @@ export class VerifyEligibilityController {
         },
       }, 200)
     } catch (error: any) {
+      console.error('[VERIFY ELIGIBILITY] Error:', error)
+      console.error('[VERIFY ELIGIBILITY] Error stack:', error.stack)
       return c.json({
         success: false,
         message: error.message || 'Failed to verify eligibility',
