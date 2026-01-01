@@ -56,12 +56,6 @@ async function cleanup() {
     await db.execute(sql`TRUNCATE TABLE "classes" CASCADE`)
     console.log('  ✅ Cleared classes')
     
-    await db.execute(sql`TRUNCATE TABLE "departments" CASCADE`)
-    console.log('  ✅ Cleared departments')
-    
-    await db.execute(sql`TRUNCATE TABLE "faculties" CASCADE`)
-    console.log('  ✅ Cleared faculties')
-    
     await db.execute(sql`TRUNCATE TABLE "admins" CASCADE`)
     console.log('  ✅ Cleared admins')
     
