@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 const signBlindedTokenSchema = z.object({
   blindedToken: z.string().min(1, 'Blinded token is required'),
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
 })
 
 export class VerifyEligibilityController {
@@ -79,7 +79,7 @@ export class VerifyEligibilityController {
       // Verify that the user has a token for this election
       const token = await verifyEligibilityService.getTokenForVoter(
         user.id,
-        validatedData.electionId
+        validatedData.election
       )
 
       if (!token) {

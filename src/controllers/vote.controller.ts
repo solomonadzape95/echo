@@ -36,11 +36,18 @@ export class VoteController {
         message: 'Vote created successfully',
       }, 201)
     } catch (error: any) {
+      console.error('[VOTE CONTROLLER] Error creating vote:', error);
+      console.error('[VOTE CONTROLLER] Error stack:', error.stack);
+      
       if (error.name === 'ZodError') {
+        console.error('[VOTE CONTROLLER] Zod validation errors:', error.errors);
         return c.json({
           success: false,
           message: 'Validation error',
-          errors: error.errors,
+          errors: error.errors.map((err: any) => ({
+            path: err.path || [],
+            message: err.message || 'Validation failed',
+          })),
         }, 400)
       }
 

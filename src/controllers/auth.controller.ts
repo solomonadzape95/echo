@@ -14,22 +14,30 @@ export class AuthController {
       const body = await c.req.json()
       const validatedData = loginSchema.parse(body)
 
-      // Call service (returns { user, accessToken, refreshToken })
-      const { user, accessToken, refreshToken } = await authService.login(validatedData)
+      // Call service (returns { user, accessToken, refreshToken, isAdmin, admin? })
+      const result = await authService.login(validatedData)
+      const { user, accessToken, refreshToken } = result
 
       // Set tokens in secure cookies
       setAccessTokenCookie(c, accessToken)
       setRefreshTokenCookie(c, refreshToken)
 
-      // Return success response (tokens are in cookies, but also return user data)
+      // Return success response (tokens are in cookies, but also return user/admin data)
+      const responseData: any = {
+        user,
+      }
+      
+      // Include admin field if it's an admin login
+      if ('admin' in result) {
+        responseData.admin = result.admin
+        responseData.isAdmin = true
+      } else {
+        responseData.isAdmin = false
+      }
+
       return c.json({
         success: true,
-        data: {
-          user,
-          // Optionally return tokens for mobile apps that can't use cookies
-          // accessToken,
-          // refreshToken,
-        },
+        data: responseData,
         message: 'Login successful',
       }, 200)
     } catch (error: any) {
@@ -149,17 +157,26 @@ export class AuthController {
         }, 401)
       }
 
-      // Call service to refresh access token
-      const { accessToken, user } = await authService.refreshAccessToken(refreshToken)
+      // Call service to refresh access token (returns { accessToken, user?, admin?, isAdmin })
+      const result = await authService.refreshAccessToken(refreshToken)
+      const { accessToken } = result
 
       // Set new access token in cookie
       setAccessTokenCookie(c, accessToken)
 
+      // Build response data - handle both admin and voter
+      const responseData: any = {}
+      if (result.isAdmin && result.admin) {
+        responseData.admin = result.admin
+        responseData.isAdmin = true
+      } else if (result.user) {
+        responseData.user = result.user
+        responseData.isAdmin = false
+      }
+
       return c.json({
         success: true,
-        data: {
-          user,
-        },
+        data: responseData,
         message: 'Token refreshed successfully',
       }, 200)
     } catch (error: any) {
@@ -180,6 +197,7 @@ export class AuthController {
       const user = c.get('user') // Get user from context (set by middleware)
 
       // Revoke refresh token if it exists
+      // revokeToken will automatically detect if it's a voter or admin token
       if (refreshToken && user) {
         await refreshTokenService.revokeToken(refreshToken, user.id)
       }

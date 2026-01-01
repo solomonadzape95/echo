@@ -52,6 +52,43 @@ export class ReceiptController {
       }, 500)
     }
   }
+
+  /**
+   * Get receipt by code with vote and election details (public endpoint for verification)
+   * GET /receipt?code=xxx
+   */
+  async getByCode(c: Context) {
+    try {
+      const code = c.req.query('code')
+
+      if (!code) {
+        return c.json({
+          success: false,
+          message: 'code query parameter is required',
+        }, 400)
+      }
+
+      const receiptData = await receiptService.getByCodeWithDetails(code)
+
+      if (!receiptData) {
+        return c.json({
+          success: false,
+          message: 'Receipt not found',
+        }, 404)
+      }
+
+      return c.json({
+        success: true,
+        data: receiptData,
+      }, 200)
+    } catch (error: any) {
+      console.error('[RECEIPT CONTROLLER] Error:', error)
+      return c.json({
+        success: false,
+        message: error.message || 'Failed to fetch receipt',
+      }, 500)
+    }
+  }
 }
 
 export const receiptController = new ReceiptController()
