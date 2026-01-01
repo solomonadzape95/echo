@@ -33,7 +33,7 @@ app.use('*', cors({
       'http://localhost:3000',
       'http://127.0.0.1:3000',
       // Add production origins here when deploying
-      // 'https://yourdomain.com',
+      'https://echo-fmir.onrender.com',
     ]
     
     // Allow requests with no origin (like mobile apps or curl requests)
