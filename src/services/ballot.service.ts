@@ -33,7 +33,7 @@ export class BallotService {
     const electionOffices = await db
       .select()
       .from(offices)
-      .where(eq(offices.election, electionId))
+      .where(eq(offices.election, election.id))
 
     // 3. Get candidates for each office with voter info
     const officesWithCandidates = await Promise.all(
