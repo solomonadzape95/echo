@@ -11,12 +11,12 @@ import { setCookie, getCookie } from 'hono/cookie'
  * so we always use 'none' with 'secure: true' in production.
  */
 const getCookieOptions = () => {
-  const isProduction = process.env.NODE_ENV === 'production';
+  // const isProduction = process.env.NODE_ENV === 'production';
   
   // In production, frontend and backend are on different domains (Vercel vs Render)
   // So we MUST use 'none' with 'secure: true' for cross-site cookies
   // In development, if same origin, we can use 'lax'
-  const sameSite = isProduction ? 'none' as const : 'lax' as const;
+  const sameSite = 'none' as const ;
   
   // Secure flag MUST be true when using 'none' (required by browsers)
   // Also use secure in production for better security
