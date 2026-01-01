@@ -26,7 +26,7 @@ export class VoteService {
       const [election] = await tx
         .select()
         .from(elections)
-        .where(eq(elections.id, input.electionId))
+        .where(eq(elections.id, input.election))
         .limit(1)
 
       if (!election) {
@@ -34,7 +34,7 @@ export class VoteService {
       }
 
       // 2. Verify eligibility by domain matching (class/department/faculty)
-      const eligibility = await checkEligibilityByDomain(voterId, input.electionId)
+      const eligibility = await checkEligibilityByDomain(voterId, input.election)
       
       if (!eligibility.eligible) {
         throw new Error(`Voter is not eligible to vote in this election: ${eligibility.reason || 'Domain mismatch'}`)
@@ -56,7 +56,7 @@ export class VoteService {
       }
 
       // 4. Verify token belongs to the election
-      if (token.election !== input.electionId) {
+      if (token.election !== input.election) {
         throw new Error('Token does not belong to this election')
       }
 
@@ -65,14 +65,14 @@ export class VoteService {
 
       if (input.prevHash) {
         // If prevHash is provided, validate it matches the last vote
-        const lastVote = await this.getLastVoteForElectionInTx(tx, input.electionId)
+        const lastVote = await this.getLastVoteForElectionInTx(tx, input.election)
         if (lastVote && lastVote.currentHash !== input.prevHash) {
           throw new Error('Previous hash does not match the last vote in the chain')
         }
         prevHash = input.prevHash
       } else {
         // Auto-determine: get the last vote for this election
-        const lastVote = await this.getLastVoteForElectionInTx(tx, input.electionId)
+        const lastVote = await this.getLastVoteForElectionInTx(tx, input.election)
         
         if (!lastVote) {
           // This is the genesis vote (first vote for this election)
@@ -108,7 +108,7 @@ export class VoteService {
           voteDataHash: input.voteDataHash, // Hash of ballot data (candidate selection)
           encryptedVoteData, // Encrypted vote data (if provided)
           tokenId: input.tokenId,
-          election: input.electionId,
+          election: input.election,
         })
         .returning()
 
@@ -149,7 +149,7 @@ export class VoteService {
         .insert(receipts)
         .values({
           receiptCode,
-          election: input.electionId,
+          election: input.election,
           voteId: newVote.id,
         })
         .returning()

@@ -1,36 +1,38 @@
 import { db } from '../db/db'
 import { eq, and } from 'drizzle-orm'
 import { classes } from '../models/class.schema'
-import { faculties } from '../models/faculty.schema'
-import { departments } from '../models/department.schema'
 import { UpdateClassInput, CreateClassInput } from '../validators/class.validator'
+import { FacultyEnum, DepartmentEnum, isDepartmentInFaculty } from '../types/faculty.types'
 
 export class ClassService {
     /**
      * Create a new class
      */
     async create(input: CreateClassInput) {
-        const { level, facultyId, departmentId } = input
+        const { level, faculty, department } = input
 
-        // Verify faculty exists
-        const [faculty] = await db.select().from(faculties).where(eq(faculties.id, facultyId))
-        if (!faculty) {
-            throw new Error('Faculty not found')
+        // Validate faculty is a valid enum value
+        if (!Object.values(FacultyEnum).includes(faculty as any)) {
+            throw new Error('Invalid faculty name')
         }
 
-        // Verify department exists
-        const [department] = await db.select().from(departments).where(eq(departments.id, departmentId))
-        if (!department) {
-            throw new Error('Department not found')
+        // Validate department is a valid enum value
+        if (!Object.values(DepartmentEnum).includes(department as any)) {
+            throw new Error('Invalid department name')
+        }
+
+        // Validate department belongs to faculty
+        if (!isDepartmentInFaculty(department, faculty)) {
+            throw new Error('Department does not belong to the specified faculty')
         }
 
         // check if class already exists
-        const [existingClass] = await db.select().from(classes).where(and(eq(classes.level, level), eq(classes.faculty, facultyId), eq(classes.department, departmentId)))
+        const [existingClass] = await db.select().from(classes).where(and(eq(classes.level, level), eq(classes.faculty, faculty), eq(classes.department, department)))
         if(existingClass){
             throw new Error("Class configuration already exists")
         }
 
-        const [newClass] = await db.insert(classes).values({level, faculty: facultyId, department: departmentId}).returning()
+        const [newClass] = await db.insert(classes).values({level, faculty, department}).returning()
         if(!newClass){
             throw new Error("Failed to create class")
         }
@@ -65,13 +67,33 @@ export class ClassService {
      * Update a class
      */
     async update(id: string, input: UpdateClassInput) {
-        const { level, facultyId, departmentId } = input
+        const { level, faculty, department } = input
+        
+        // Validate faculty is a valid enum value
+        if (faculty && !Object.values(FacultyEnum).includes(faculty as any)) {
+            throw new Error('Invalid faculty name')
+        }
+
+        // Validate department is a valid enum value
+        if (department && !Object.values(DepartmentEnum).includes(department as any)) {
+            throw new Error('Invalid department name')
+        }
+
+        // Validate department belongs to faculty if both are provided
+        if (faculty && department && !isDepartmentInFaculty(department, faculty)) {
+            throw new Error('Department does not belong to the specified faculty')
+        }
+
         const [classData] = await db.select().from(classes).where(eq(classes.id, id))
         if(!classData){
             throw new Error('Class not found')
         }
 
-        const [updatedClass] = await db.update(classes).set({level, faculty: facultyId, department: departmentId}).where(eq(classes.id, id)).returning()
+        const updateData: any = { level }
+        if (faculty) updateData.faculty = faculty
+        if (department) updateData.department = department
+
+        const [updatedClass] = await db.update(classes).set(updateData).where(eq(classes.id, id)).returning()
         if(!updatedClass){
             throw new Error('Failed to update class')
         }

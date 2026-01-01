@@ -14,7 +14,7 @@ export class IssuanceService {
     const [election] = await db
       .select()
       .from(elections)
-      .where(eq(elections.id, input.electionId))
+      .where(eq(elections.id, input.election))
       .limit(1)
 
     if (!election) {
@@ -37,7 +37,7 @@ export class IssuanceService {
       .select()
       .from(issuances)
       .where(and(
-        eq(issuances.election, input.electionId),
+        eq(issuances.election, input.election),
         eq(issuances.voterId, input.voterId)
       ))
       .limit(1)
@@ -50,7 +50,7 @@ export class IssuanceService {
     const [newIssuance] = await db
       .insert(issuances)
       .values({
-        election: input.electionId,
+        election: input.election,
         voterId: input.voterId,
       })
       .returning()

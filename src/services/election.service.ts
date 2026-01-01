@@ -1,6 +1,7 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql, lte, gte } from 'drizzle-orm'
 import { db } from '../db/db'
 import { elections } from '../models/election.schema'
+import { offices } from '../models/office.schema'
 import type { CreateElectionInput, UpdateElectionInput } from '../validators/election.validator'
 
 export class ElectionService {
@@ -35,20 +36,66 @@ export class ElectionService {
       throw new Error('Failed to create election')
     }
 
+    // If offices are provided, create them for this election
+    if (input.offices && input.offices.length > 0) {
+      const officeValues = input.offices.map(office => ({
+        name: office.title,
+        description: office.description,
+        election: newElection.id,
+        dependsOn: null, // No dependencies by default
+      }))
+
+      await db.insert(offices).values(officeValues)
+    }
+
     return newElection
   }
 
   /**
-   * Get all elections
+   * Update election statuses based on current date
+   * This should be called periodically or when fetching elections
+   */
+  async updateElectionStatuses() {
+    const now = new Date()
+    
+    // Update pending elections that should be active
+    await db
+      .update(elections)
+      .set({ status: 'active' })
+      .where(
+        and(
+          eq(elections.status, 'pending'),
+          lte(elections.startDate, now)
+        )
+      )
+    
+    // Update active elections that should be completed
+    await db
+      .update(elections)
+      .set({ status: 'completed' })
+      .where(
+        and(
+          eq(elections.status, 'active'),
+          lte(elections.endDate, now)
+        )
+      )
+  }
+
+  /**
+   * Get all elections (with automatic status updates)
    */
   async getAll() {
+    // Update statuses before fetching
+    await this.updateElectionStatuses()
     return await db.select().from(elections)
   }
 
   /**
-   * Get election by ID
+   * Get election by ID (with automatic status update)
    */
   async getById(id: string) {
+    // Update statuses before fetching
+    await this.updateElectionStatuses()
     const [election] = await db
       .select()
       .from(elections)
@@ -73,9 +120,11 @@ export class ElectionService {
   }
 
   /**
-   * Get elections by status
+   * Get elections by status (with automatic status updates)
    */
   async getByStatus(status: 'pending' | 'active' | 'completed') {
+    // Update statuses before fetching
+    await this.updateElectionStatuses()
     return await db
       .select()
       .from(elections)

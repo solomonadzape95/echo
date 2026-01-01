@@ -2,8 +2,6 @@ import { eq, and } from 'drizzle-orm'
 import { db } from '../db/db'
 import { masterlist } from '../models/masterlist.schema'
 import { classes } from '../models/class.schema'
-import { departments } from '../models/department.schema'
-import { faculties } from '../models/faculty.schema'
 
 interface StudentInput {
   name: string
@@ -202,17 +200,12 @@ export class MasterlistService {
           // Class fields
           classLevel: classes.level,
           classId_full: classes.id,
-          // Department fields
-          departmentId: departments.id,
-          departmentName: departments.name,
-          // Faculty fields (from class directly)
-          facultyId: faculties.id,
-          facultyName: faculties.name,
+          // Department and Faculty fields (now enum values directly in class)
+          department: classes.department,
+          faculty: classes.faculty,
         })
         .from(masterlist)
         .leftJoin(classes, eq(masterlist.class, classes.id))
-        .leftJoin(departments, eq(classes.department, departments.id))
-        .leftJoin(faculties, eq(classes.faculty, faculties.id))
         .where(eq(masterlist.regNo, regNo))
         .limit(1)
 
@@ -238,14 +231,8 @@ export class MasterlistService {
         class: result.classId_full ? {
           id: result.classId_full,
           name: result.classLevel,
-          department: result.departmentId ? {
-            id: result.departmentId,
-            name: result.departmentName,
-            faculty: result.facultyId ? {
-              id: result.facultyId,
-              name: result.facultyName,
-            } : undefined,
-          } : undefined,
+          department: result.department || undefined,
+          faculty: result.faculty || undefined,
         } : undefined,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,

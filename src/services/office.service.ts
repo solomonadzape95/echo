@@ -9,12 +9,22 @@ export class OfficeService {
    * Create a new office
    */
   async create(input: CreateOfficeInput) {
+    console.log('[OFFICE SERVICE] Create called with input:', JSON.stringify(input, null, 2))
+    console.log('[OFFICE SERVICE] Input type:', typeof input)
+    console.log('[OFFICE SERVICE] Input keys:', Object.keys(input || {}))
+    console.log('[OFFICE SERVICE] Election ID:', input.election, 'Type:', typeof input.election)
+    console.log('[OFFICE SERVICE] Name:', input.name, 'Type:', typeof input.name)
+    console.log('[OFFICE SERVICE] Description:', input.description, 'Type:', typeof input.description)
+    console.log('[OFFICE SERVICE] DependsOn:', input.dependsOn, 'Type:', typeof input.dependsOn)
+
     // Verify election exists
     const [election] = await db
       .select()
       .from(elections)
-      .where(eq(elections.id, input.electionId))
+      .where(eq(elections.id, input.election))
       .limit(1)
+
+    console.log('[OFFICE SERVICE] Election lookup result:', election ? 'Found' : 'Not found')
 
     if (!election) {
       throw new Error('Election not found')
@@ -32,7 +42,7 @@ export class OfficeService {
         throw new Error('Dependent office not found')
       }
 
-      if (dependsOnOffice.election !== input.electionId) {
+      if (dependsOnOffice.election !== input.election) {
         throw new Error('Dependent office must belong to the same election')
       }
     }
@@ -43,7 +53,7 @@ export class OfficeService {
       .from(offices)
       .where(and(
         eq(offices.name, input.name),
-        eq(offices.election, input.electionId)
+        eq(offices.election, input.election)
       ))
       .limit(1)
 
@@ -57,7 +67,7 @@ export class OfficeService {
       .values({
         name: input.name,
         description: input.description,
-        election: input.electionId,
+        election: input.election,
         dependsOn: input.dependsOn || null,
       })
       .returning()
@@ -119,14 +129,14 @@ export class OfficeService {
     }
 
     // Determine which election to validate against
-    const electionId = input.electionId || existing.election
+    const electionId = input.election || existing.election
 
     // If election is being changed, verify new election exists
-    if (input.electionId && input.electionId !== existing.election) {
+    if (input.election && input.election !== existing.election) {
       const [election] = await db
         .select()
         .from(elections)
-        .where(eq(elections.id, input.electionId))
+        .where(eq(elections.id, input.election))
         .limit(1)
 
       if (!election) {
@@ -161,7 +171,7 @@ export class OfficeService {
     }
 
     // Check for duplicates if name or election is changing
-    if (input.name || input.electionId) {
+    if (input.name || input.election) {
       const [duplicate] = await db
         .select()
         .from(offices)
@@ -181,7 +191,7 @@ export class OfficeService {
     const updateData: any = {}
     if (input.name) updateData.name = input.name
     if (input.description) updateData.description = input.description
-    if (input.electionId) updateData.election = input.electionId
+    if (input.election) updateData.election = input.election
     if (input.dependsOn !== undefined) updateData.dependsOn = input.dependsOn
 
     const [updated] = await db

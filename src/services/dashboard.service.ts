@@ -1,13 +1,13 @@
 import { eq, and, gte, lte, sql, or } from 'drizzle-orm'
 import { db } from '../db/db'
 import { voters } from '../models/voter.schema'
+import { admins } from '../models/admin.schema'
 import { elections } from '../models/election.schema'
 import { issuances } from '../models/issuance.schema'
 import { votes } from '../models/vote.schema'
 import { tokens } from '../models/token.schema'
 import { classes } from '../models/class.schema'
-import { departments } from '../models/department.schema'
-import { faculties } from '../models/faculty.schema'
+import { masterlist } from '../models/masterlist.schema'
 
 export class DashboardService {
   /**
@@ -17,7 +17,18 @@ export class DashboardService {
   async getDashboardData(voterId: string) {
     console.log('[DASHBOARD SERVICE] Getting dashboard data for voter:', voterId)
 
-    // 1. Get voter info with class details
+    // First, check if this is an admin trying to access voter dashboard
+    const [admin] = await db
+      .select()
+      .from(admins)
+      .where(eq(admins.id, voterId))
+      .limit(1)
+
+    if (admin) {
+      throw new Error('Dashboard is only available for voters. Admins should use the admin dashboard.')
+    }
+
+    // 1. Get voter info with class details and name from masterlist
     const [voter] = await db
       .select({
         id: voters.id,
@@ -26,15 +37,13 @@ export class DashboardService {
         classId: voters.class,
         createdAt: voters.createdAt,
         classLevel: classes.level,
-        departmentId: departments.id,
-        departmentName: departments.name,
-        facultyId: faculties.id,
-        facultyName: faculties.name,
+        department: classes.department, // Now enum value directly
+        faculty: classes.faculty, // Now enum value directly
+        name: masterlist.name,
       })
       .from(voters)
       .leftJoin(classes, eq(voters.class, classes.id))
-      .leftJoin(departments, eq(classes.department, departments.id))
-      .leftJoin(faculties, eq(classes.faculty, faculties.id))
+      .leftJoin(masterlist, eq(voters.regNumber, masterlist.regNo))
       .where(eq(voters.id, voterId))
       .limit(1)
 
@@ -86,7 +95,7 @@ export class DashboardService {
         electionId: votes.election,
       })
       .from(issuances)
-      .innerJoin(tokens, eq(issuances.election, tokens.election))
+      .innerJoin(tokens, eq(issuances.tokenHash, tokens.tokenHash)) // Now join directly on tokenHash
       .innerJoin(votes, eq(tokens.tokenHash, votes.tokenId))
       .where(eq(issuances.voterId, voterId))
 
@@ -104,17 +113,12 @@ export class DashboardService {
         id: voter.id,
         username: voter.username,
         regNumber: voter.regNumber,
+        name: voter.name || voter.username, // Use name from masterlist, fallback to username
         class: voter.classId ? {
           id: voter.classId,
           name: voter.classLevel,
-          department: voter.departmentId ? {
-            id: voter.departmentId,
-            name: voter.departmentName,
-            faculty: voter.facultyId ? {
-              id: voter.facultyId,
-              name: voter.facultyName,
-            } : undefined,
-          } : undefined,
+          department: voter.department || undefined,
+          faculty: voter.faculty || undefined,
         } : undefined,
         createdAt: voter.createdAt,
       },

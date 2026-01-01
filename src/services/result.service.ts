@@ -101,17 +101,57 @@ export class ResultService {
     for (const vote of allVotes) {
       if (!vote.encryptedVoteData) {
         // Vote has no encrypted data, skip it
+        console.warn(`[RESULT SERVICE] Vote ${vote.id} has no encryptedVoteData`)
         invalidVotes++
         invalidVoteIds.push(vote.id)
         continue
       }
 
       try {
-        // Decrypt the vote data
-        const decryptedJson = voteEncryptionService.decryptVoteData(vote.encryptedVoteData)
+        // Decrypt or use plain text vote data
+        // Check if data is encrypted (format: iv:authTag:encryptedData) or plain text
+        // Encrypted format: 32 hex chars (IV) : 32 hex chars (authTag) : hex data
+        let decryptedJson: string
+        let isEncrypted = false
+        
+        // Better detection: encrypted data should have exactly 3 parts separated by colons
+        // and the first two parts should be hex strings of specific lengths (IV=32, authTag=32)
+        const parts = vote.encryptedVoteData.split(':')
+        if (parts.length === 3) {
+          const [ivHex, authTagHex] = parts
+          // IV and authTag should be hex strings of specific lengths
+          // IV is 16 bytes = 32 hex chars, authTag is 16 bytes = 32 hex chars
+          const isHex = /^[0-9a-f]+$/i
+          if (ivHex.length === 32 && authTagHex.length === 32 && 
+              isHex.test(ivHex) && isHex.test(authTagHex)) {
+            isEncrypted = true
+          }
+        }
+        
+        if (isEncrypted) {
+          // Data is encrypted, decrypt it
+          decryptedJson = voteEncryptionService.decryptVoteData(vote.encryptedVoteData)
+        } else {
+          // Data is plain text (for testing/backward compatibility)
+          // Try to parse as JSON to verify it's valid JSON
+          try {
+            JSON.parse(vote.encryptedVoteData)
+            decryptedJson = vote.encryptedVoteData
+          } catch (parseError) {
+            // Not valid JSON, might be encrypted but detection failed
+            // Try to decrypt anyway
+            try {
+              decryptedJson = voteEncryptionService.decryptVoteData(vote.encryptedVoteData)
+            } catch (decryptError) {
+              throw new Error(`Vote data is neither valid JSON nor encrypted: ${parseError instanceof Error ? parseError.message : 'parse failed'}`)
+            }
+          }
+        }
+        
         const voteData = JSON.parse(decryptedJson) // { officeId: candidateId, ... }
 
         // Verify integrity: check if hash matches
+        // Note: Hash should be computed from the JSON string exactly as it was when created
         const computedHash = crypto
           .createHash('sha256')
           .update(decryptedJson)
@@ -119,37 +159,70 @@ export class ResultService {
 
         if (computedHash !== vote.voteDataHash) {
           // Vote data has been tampered with!
+          console.warn(`[RESULT SERVICE] Hash mismatch for vote ${vote.id}`)
+          console.warn(`  Expected hash: ${vote.voteDataHash}`)
+          console.warn(`  Computed hash: ${computedHash}`)
+          console.warn(`  Vote data: ${decryptedJson.substring(0, 100)}...`)
           invalidVotes++
           invalidVoteIds.push(vote.id)
           continue
         }
 
         // Count votes per office -> candidate
-        for (const [officeId, candidateId] of Object.entries(voteData)) {
-          if (typeof candidateId !== 'string') continue
-          
-          // Verify office exists in this election
-          if (!electionOffices.find(o => o.id === officeId)) {
-            continue // Skip invalid office
+        // Note: A vote is valid if it has valid hash, even if it has no selections (abstention)
+        let hasValidVote = false
+        const voteDataEntries = Object.entries(voteData)
+        
+        if (voteDataEntries.length === 0) {
+          // Empty vote data (abstention) - still valid, just no votes to count
+          console.log(`[RESULT SERVICE] Vote ${vote.id} has empty vote data (abstention) - still valid`)
+          validVotes++
+        } else {
+          for (const [officeId, candidateId] of voteDataEntries) {
+            if (typeof candidateId !== 'string') {
+              console.warn(`[RESULT SERVICE] Vote ${vote.id} has invalid candidate ID type for office ${officeId}: ${typeof candidateId}`)
+              continue
+            }
+            
+            // Verify office exists in this election
+            const office = electionOffices.find(o => o.id === officeId)
+            if (!office) {
+              console.warn(`[RESULT SERVICE] Vote ${vote.id} references invalid office: ${officeId}`)
+              console.warn(`  Available offices:`, electionOffices.map(o => o.id))
+              continue // Skip invalid office
+            }
+
+            // Verify candidate exists for this office
+            const candidate = candidatesByOffice[officeId]?.find(c => c.id === candidateId)
+            if (!candidate) {
+              console.warn(`[RESULT SERVICE] Vote ${vote.id} references invalid candidate ${candidateId} for office ${officeId}`)
+              console.warn(`  Available candidates for office ${officeId}:`, candidatesByOffice[officeId]?.map(c => c.id))
+              continue // Skip invalid candidate
+            }
+
+            // Increment vote count
+            if (tally[officeId] && tally[officeId][candidateId] !== undefined) {
+              tally[officeId][candidateId]++
+              hasValidVote = true
+            } else {
+              console.warn(`[RESULT SERVICE] Vote ${vote.id} - Tally not initialized for office ${officeId}, candidate ${candidateId}`)
+            }
           }
 
-          // Verify candidate exists for this office
-          if (!candidatesByOffice[officeId]?.find(c => c.id === candidateId)) {
-            continue // Skip invalid candidate
-          }
-
-          // Increment vote count
-          if (tally[officeId] && tally[officeId][candidateId] !== undefined) {
-            tally[officeId][candidateId]++
+          if (hasValidVote) {
+            validVotes++
+          } else {
+            // Vote has selections but none are valid - this is suspicious but we'll still count it as valid if hash matches
+            console.warn(`[RESULT SERVICE] Vote ${vote.id} has selections but none match valid candidates - marking as valid (hash verified)`)
+            validVotes++
           }
         }
-
-        validVotes++
       } catch (error: any) {
         // Failed to decrypt or parse vote
+        console.error(`[RESULT SERVICE] Failed to process vote ${vote.id}:`, error.message)
+        console.error(`  Error stack:`, error.stack)
         invalidVotes++
         invalidVoteIds.push(vote.id)
-        console.error(`Failed to process vote ${vote.id}:`, error.message)
       }
     }
 
@@ -187,13 +260,29 @@ export class ResultService {
     }
 
     // 10. Delete existing results for this election (if recalculating)
-    await db
-      .delete(results)
-      .where(eq(results.election, electionId))
+    try {
+      await db
+        .delete(results)
+        .where(eq(results.election, electionId))
+    } catch (error: any) {
+      // If table doesn't exist, that's okay - we'll create it when inserting
+      if (!error.message?.includes('does not exist') && !error.message?.includes('relation') && error.code !== '42P01') {
+        console.error('[RESULT SERVICE] Error deleting existing results:', error)
+        throw new Error(`Failed to delete existing results: ${error.message || error}`)
+      }
+    }
 
     // 11. Insert new results
     if (resultsToInsert.length > 0) {
-      await db.insert(results).values(resultsToInsert)
+      try {
+        await db.insert(results).values(resultsToInsert)
+      } catch (error: any) {
+        console.error('[RESULT SERVICE] Error inserting results:', error)
+        if (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === '42P01') {
+          throw new Error('Results table does not exist. Please run: bun run db:push')
+        }
+        throw new Error(`Failed to insert results: ${error.message || error}`)
+      }
     }
 
     // 12. Return summary
@@ -229,19 +318,35 @@ export class ResultService {
     }
 
     // Get all results for this election with candidate and voter info
-    const electionResults = await db
-      .select({
-        result: results,
-        office: offices,
-        candidate: candidates,
-        voter: voters,
-      })
-      .from(results)
-      .innerJoin(offices, eq(results.office, offices.id))
-      .innerJoin(candidates, eq(results.candidate, candidates.id))
-      .innerJoin(voters, eq(candidates.voterId, voters.id))
-      .where(eq(results.election, electionId))
-      .orderBy(offices.name, desc(results.voteCount))
+    let electionResults
+    try {
+      electionResults = await db
+        .select({
+          result: results,
+          office: offices,
+          candidate: candidates,
+          voter: voters,
+        })
+        .from(results)
+        .innerJoin(offices, eq(results.office, offices.id))
+        .innerJoin(candidates, eq(results.candidate, candidates.id))
+        .innerJoin(voters, eq(candidates.voterId, voters.id))
+        .where(eq(results.election, electionId))
+        .orderBy(offices.name, desc(results.voteCount))
+    } catch (error: any) {
+      console.error('[RESULT SERVICE] Error fetching results:', error)
+      // If table doesn't exist, return empty results
+      if (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === '42P01') {
+        return {
+          electionId,
+          electionName: election.name,
+          hasResults: false,
+          message: 'Results table not found. Please run database migrations.',
+          offices: [],
+        }
+      }
+      throw new Error(`Failed to fetch results: ${error.message || error}`)
+    }
 
     if (electionResults.length === 0) {
       return {

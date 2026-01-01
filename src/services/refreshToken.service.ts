@@ -7,9 +7,9 @@ import type { JwtPayload } from '../types/jwt.types'
 
 export class RefreshTokenService {
   /**
-   * Create and store a refresh token for a user
+   * Create and store a refresh token for a user (voter or admin)
    */
-  async createRefreshToken(voterId: string, payload: JwtPayload) {
+  async createRefreshToken(userId: string, payload: JwtPayload, isAdmin: boolean = false) {
     // Generate refresh token
     const token = await generateRefreshToken(payload)
     
@@ -25,7 +25,8 @@ export class RefreshTokenService {
       .insert(refreshTokens)
       .values({
         tokenHash,
-        voterId,
+        voterId: isAdmin ? null : userId,
+        adminId: isAdmin ? userId : null,
         expiresAt,
       })
       .returning()
@@ -36,19 +37,44 @@ export class RefreshTokenService {
 
   /**
    * Verify a refresh token is valid and not revoked
+   * Supports both voters and admins - automatically detects which one
    */
-  async verifyRefreshToken(token: string, voterId: string): Promise<boolean> {
-    // Get all refresh tokens for this user
-    const userTokens = await db
-      .select()
-      .from(refreshTokens)
-      .where(
-        and(
-          eq(refreshTokens.voterId, voterId),
-          isNull(refreshTokens.revokedAt),
-          gt(refreshTokens.expiresAt, new Date())
+  async verifyRefreshToken(token: string, userId: string, isAdmin?: boolean): Promise<boolean> {
+    const { or } = await import('drizzle-orm')
+    
+    // Get all refresh tokens for this user (voter or admin)
+    let userTokens
+    
+    if (isAdmin === undefined) {
+      // Try to find token for either voter or admin
+      userTokens = await db
+        .select()
+        .from(refreshTokens)
+        .where(
+          and(
+            or(
+              eq(refreshTokens.voterId, userId),
+              eq(refreshTokens.adminId, userId)
+            ),
+            isNull(refreshTokens.revokedAt),
+            gt(refreshTokens.expiresAt, new Date())
+          )
         )
-      )
+    } else {
+      // Use the provided isAdmin flag
+      userTokens = await db
+        .select()
+        .from(refreshTokens)
+        .where(
+          and(
+            isAdmin 
+              ? eq(refreshTokens.adminId, userId)
+              : eq(refreshTokens.voterId, userId),
+            isNull(refreshTokens.revokedAt),
+            gt(refreshTokens.expiresAt, new Date())
+          )
+        )
+    }
     
     // Check if any token hash matches
     for (const storedToken of userTokens) {
@@ -63,17 +89,41 @@ export class RefreshTokenService {
 
   /**
    * Find refresh token by hash (for revocation)
+   * Supports both voters and admins - automatically detects which one
    */
-  async findTokenByHash(token: string, voterId: string) {
-    const userTokens = await db
-      .select()
-      .from(refreshTokens)
-      .where(
-        and(
-          eq(refreshTokens.voterId, voterId),
-          isNull(refreshTokens.revokedAt)
+  async findTokenByHash(token: string, userId: string, isAdmin?: boolean) {
+    // If isAdmin is not provided, try both voter and admin
+    let userTokens
+    
+    if (isAdmin === undefined) {
+      // Try to find token for either voter or admin
+      const { or } = await import('drizzle-orm')
+      userTokens = await db
+        .select()
+        .from(refreshTokens)
+        .where(
+          and(
+            or(
+              eq(refreshTokens.voterId, userId),
+              eq(refreshTokens.adminId, userId)
+            ),
+            isNull(refreshTokens.revokedAt)
+          )
         )
-      )
+    } else {
+      // Use the provided isAdmin flag
+      userTokens = await db
+        .select()
+        .from(refreshTokens)
+        .where(
+          and(
+            isAdmin
+              ? eq(refreshTokens.adminId, userId)
+              : eq(refreshTokens.voterId, userId),
+            isNull(refreshTokens.revokedAt)
+          )
+        )
+    }
     
     for (const storedToken of userTokens) {
       const isValid = await bcrypt.compare(token, storedToken.tokenHash)
@@ -87,9 +137,11 @@ export class RefreshTokenService {
 
   /**
    * Revoke a refresh token (logout)
+   * Supports both voters and admins - automatically detects which one
    */
-  async revokeToken(token: string, voterId: string) {
-    const tokenRecord = await this.findTokenByHash(token, voterId)
+  async revokeToken(token: string, userId: string, isAdmin?: boolean) {
+    // findTokenByHash will automatically detect if it's a voter or admin token
+    const tokenRecord = await this.findTokenByHash(token, userId, isAdmin)
     
     if (!tokenRecord) {
       return false
@@ -106,14 +158,17 @@ export class RefreshTokenService {
 
   /**
    * Revoke all refresh tokens for a user (logout from all devices)
+   * Supports both voters and admins
    */
-  async revokeAllTokens(voterId: string) {
+  async revokeAllTokens(userId: string, isAdmin: boolean = false) {
     await db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })
       .where(
         and(
-          eq(refreshTokens.voterId, voterId),
+          isAdmin
+            ? eq(refreshTokens.adminId, userId)
+            : eq(refreshTokens.voterId, userId),
           isNull(refreshTokens.revokedAt)
         )
       )

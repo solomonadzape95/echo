@@ -1,6 +1,9 @@
-import { eq } from 'drizzle-orm'
+import { eq, and, isNull, gt, or } from 'drizzle-orm'
 import { db } from '../db/db'
 import { voters } from '../models/voter.schema'
+import { admins } from '../models/admin.schema'
+import { refreshTokens } from '../models/refreshToken.schema'
+import { masterlist } from '../models/masterlist.schema'
 import type { LoginInput, RegisterInput } from '../validators/auth.validator'
 import * as bcrypt from 'bcryptjs'
 import { generateAccessToken } from '../helpers/jwt.helpers'
@@ -58,6 +61,20 @@ export class AuthService {
    * Register a new voter
    */
   async register(input: RegisterInput) {
+    // Get name from masterlist (username should come from masterlist)
+    const [masterlistEntry] = await db
+      .select()
+      .from(masterlist)
+      .where(eq(masterlist.regNo, input.regNumber))
+      .limit(1)
+
+    if (!masterlistEntry) {
+      throw new Error('Registration number not found in masterlist')
+    }
+
+    // Use name from masterlist as username (override input.username if provided)
+    const username = masterlistEntry.name
+
     // Check if registration number already exists
     const [existingUser] = await db
       .select()
@@ -73,7 +90,7 @@ export class AuthService {
     const [existingUsername] = await db
       .select()
       .from(voters)
-      .where(eq(voters.username, input.username))
+      .where(eq(voters.username, username))
       .limit(1)
 
     if (existingUsername) {
@@ -87,7 +104,7 @@ export class AuthService {
     const [newVoter] = await db
       .insert(voters)
       .values({
-        username: input.username,
+        username: username, // Use name from masterlist
         class: input.classId,
         regNumber: input.regNumber,
         password: hashedPassword,
@@ -132,6 +149,7 @@ export class AuthService {
 
   /**
    * Refresh access token using refresh token
+   * Supports both voters and admins
    */
   async refreshAccessToken(refreshToken: string) {
     // Verify refresh token first (this checks signature and expiration)
@@ -152,44 +170,103 @@ export class AuthService {
       throw new Error('Refresh token expired')
     }
     
-    // Verify refresh token is valid and not revoked
-    const isValid = await refreshTokenService.verifyRefreshToken(refreshToken, decoded.id)
-    if (!isValid) {
+    // Find the matching refresh token record to determine if it's an admin or voter
+    const userTokens = await db
+      .select()
+      .from(refreshTokens)
+      .where(
+        and(
+          or(
+            eq(refreshTokens.voterId, decoded.id),
+            eq(refreshTokens.adminId, decoded.id)
+          ),
+          isNull(refreshTokens.revokedAt),
+          gt(refreshTokens.expiresAt, new Date())
+        )
+      )
+    
+    // Find the token that matches the hash
+    let matchingToken = null
+    for (const storedToken of userTokens) {
+      const isValid = await bcrypt.compare(refreshToken, storedToken.tokenHash)
+      if (isValid) {
+        matchingToken = storedToken
+        break
+      }
+    }
+    
+    if (!matchingToken) {
       throw new Error('Invalid or revoked refresh token')
     }
     
-    // Get fresh user data
-    const [user] = await db
-      .select()
-      .from(voters)
-      .where(eq(voters.id, decoded.id))
-      .limit(1)
+    // Determine if this is an admin or voter token
+    const isAdmin = matchingToken.adminId !== null && matchingToken.adminId === decoded.id
     
-    if (!user) {
-      throw new Error('User not found')
-    }
-    
-    // Create new JWT payload
-    const jwtPayload: JwtPayload = {
-      id: user.id,
-      regNumber: user.regNumber,
-      username: user.username,
-      classId: user.class,
-    }
-    
-    // Generate new access token
-    const accessToken = await generateAccessToken(jwtPayload)
-    
-    return {
-      accessToken,
-      user: {
+    if (isAdmin) {
+      // Fetch admin data
+      const [admin] = await db
+        .select()
+        .from(admins)
+        .where(eq(admins.id, decoded.id))
+        .limit(1)
+      
+      if (!admin) {
+        throw new Error('Admin not found')
+      }
+      
+      // Create new JWT payload for admin
+      const jwtPayload: JwtPayload = {
+        id: admin.id,
+        regNumber: admin.username, // Use username as regNumber for compatibility
+        username: admin.username,
+        classId: admin.id, // Placeholder - admins don't have classes
+      }
+      
+      // Generate new access token
+      const accessToken = await generateAccessToken(jwtPayload)
+      
+      // Return admin data
+      const { password, ...adminWithoutPassword } = admin
+      return {
+        accessToken,
+        admin: adminWithoutPassword,
+        isAdmin: true,
+      }
+    } else {
+      // Fetch voter data
+      const [user] = await db
+        .select()
+        .from(voters)
+        .where(eq(voters.id, decoded.id))
+        .limit(1)
+      
+      if (!user) {
+        throw new Error('User not found')
+      }
+      
+      // Create new JWT payload
+      const jwtPayload: JwtPayload = {
         id: user.id,
         regNumber: user.regNumber,
         username: user.username,
-        class: user.class,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
+        classId: user.class,
+      }
+      
+      // Generate new access token
+      const accessToken = await generateAccessToken(jwtPayload)
+      
+      return {
+        accessToken,
+        user: {
+          id: user.id,
+          regNumber: user.regNumber,
+          username: user.username,
+          class: user.class,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+        isAdmin: false,
+      }
     }
   }
 }

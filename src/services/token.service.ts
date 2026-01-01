@@ -13,7 +13,7 @@ export class TokenService {
     const [election] = await db
       .select()
       .from(elections)
-      .where(eq(elections.id, input.electionId))
+      .where(eq(elections.id, input.election))
       .limit(1)
 
     if (!election) {
@@ -35,7 +35,7 @@ export class TokenService {
     const [newToken] = await db
       .insert(tokens)
       .values({
-        election: input.electionId,
+        election: input.election,
         tokenHash: input.tokenHash,
         usedAt: null, // Token is unused by default
       })
