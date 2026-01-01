@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
 // Login validation schema
+// Accepts either registration number (for voters) or username (for admins)
 export const loginSchema = z.object({
-  regNumber: z.string().min(1, 'Registration number is required'),
+  regNumber: z.string().min(1, 'Registration number or username is required'),
   password: z.string().min(1, 'Password is required'),
 })
 

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // Create token validation schema
 export const createTokenSchema = z.object({
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
   tokenHash: z.string().min(1, 'Token hash is required'),
 })
 
@@ -18,7 +18,7 @@ export const tokenIdSchema = z.object({
 
 // Get tokens by election
 export const getTokensByElectionSchema = z.object({
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
 })
 
 export type CreateTokenInput = z.infer<typeof createTokenSchema>

@@ -7,9 +7,9 @@ export const GENESIS_HASH = '000000000000000000000000000000000000000000000000000
 export const createVoteSchema = z.object({
   currentHash: z.string().min(1, 'Current hash is required'),
   voteDataHash: z.string().min(1, 'Vote data hash (hash of ballot/candidate selection) is required'),
-  voteData: z.record(z.any()).optional(), // Optional: raw vote data (candidate selections) - will be encrypted server-side
+  voteData: z.record(z.string(), z.string()).optional(), // Optional: raw vote data (officeId: candidateId) - will be encrypted server-side
   tokenId: z.string().min(1, 'Token ID is required'),
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
   // prevHash is optional - will be set automatically (genesis or last vote's hash)
   prevHash: z.string().optional(),
 })

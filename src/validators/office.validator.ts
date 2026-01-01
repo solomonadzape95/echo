@@ -4,15 +4,15 @@ import { z } from 'zod'
 export const createOfficeSchema = z.object({
   name: z.string().min(1, 'Office name is required'),
   description: z.string().min(1, 'Description is required'),
-  electionId: z.string().uuid('Invalid election ID'),
-  dependsOn: z.string().uuid('Invalid depends on office ID').optional(),
+  election: z.string().uuid('Invalid election ID'),
+  dependsOn: z.string().uuid('Invalid depends on office ID').optional().nullable(),
 })
 
 // Update office validation schema
 export const updateOfficeSchema = z.object({
   name: z.string().min(1, 'Office name is required').optional(),
   description: z.string().min(1, 'Description is required').optional(),
-  electionId: z.string().uuid('Invalid election ID').optional(),
+  election: z.string().uuid('Invalid election ID').optional(),
   dependsOn: z.string().uuid('Invalid depends on office ID').optional().nullable(),
 })
 
@@ -23,7 +23,7 @@ export const officeIdSchema = z.object({
 
 // Get offices by election
 export const getOfficesByElectionSchema = z.object({
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
 })
 
 export type CreateOfficeInput = z.infer<typeof createOfficeSchema>

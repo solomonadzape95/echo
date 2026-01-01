@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // Create issuance validation schema
 export const createIssuanceSchema = z.object({
-  electionId: z.string().uuid('Invalid election ID'),
+  election: z.string().uuid('Invalid election ID'),
   voterId: z.string().uuid('Invalid voter ID'),
 })
 

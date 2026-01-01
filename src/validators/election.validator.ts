@@ -6,6 +6,12 @@ const electionTypeEnum = z.enum(['class', 'department', 'faculty'])
 // Election status enum
 const electionStatusEnum = z.enum(['pending', 'active', 'completed'])
 
+// Office template schema for election creation
+const officeTemplateSchema = z.object({
+  title: z.string().min(1, 'Office title is required'),
+  description: z.string().min(1, 'Office description is required'),
+})
+
 // Create election validation schema
 export const createElectionSchema = z.object({
   name: z.string().min(1, 'Election name is required'),
@@ -14,7 +20,8 @@ export const createElectionSchema = z.object({
   startDate: z.string().datetime('Invalid start date format').or(z.date()),
   endDate: z.string().datetime('Invalid end date format').or(z.date()),
   description: z.string().min(1, 'Description is required'),
-  domainId: z.string().uuid('Invalid domain ID'),
+  domainId: z.string().min(1, 'Domain ID is required'), // Can be UUID (for classes) or enum string (for departments/faculties)
+  offices: z.array(officeTemplateSchema).optional(), // Optional array of offices to create with the election
 }).refine(
   (data) => {
     const start = typeof data.startDate === 'string' ? new Date(data.startDate) : data.startDate
@@ -35,7 +42,7 @@ export const updateElectionSchema = z.object({
   startDate: z.string().datetime('Invalid start date format').or(z.date()).optional(),
   endDate: z.string().datetime('Invalid end date format').or(z.date()).optional(),
   description: z.string().min(1, 'Description is required').optional(),
-  domainId: z.string().uuid('Invalid domain ID').optional(),
+  domainId: z.string().min(1, 'Domain ID is required').optional(), // Can be UUID (for classes) or enum string (for departments/faculties)
 }).refine(
   (data) => {
     if (data.startDate && data.endDate) {
