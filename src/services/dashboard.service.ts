@@ -53,7 +53,26 @@ export class DashboardService {
 
     const now = new Date()
 
+    // Get voter's class with department and faculty for domain filtering
+    const [voterClass] = await db
+      .select()
+      .from(classes)
+      .where(eq(classes.id, voter.classId || ''))
+      .limit(1)
+
+    // Build domain filter: elections where domainId matches voter's class, department, or faculty
+    const domainFilters = voterClass
+      ? [
+          eq(elections.domainId, voter.classId || ''), // Match class elections
+          eq(elections.domainId, voterClass.department), // OR match department elections
+          eq(elections.domainId, voterClass.faculty), // OR match faculty elections
+        ]
+      : [eq(elections.domainId, voter.classId || '')] // Fallback to class only if no class data
+
+    const domainFilter = domainFilters.length > 1 ? or(...domainFilters) : domainFilters[0]
+
     // 2. Get active election (status='active' and current date between startDate and endDate)
+    // Filter by domain to only show elections the voter is eligible for
     const [activeElection] = await db
       .select()
       .from(elections)
@@ -61,20 +80,25 @@ export class DashboardService {
         and(
           eq(elections.status, 'active'),
           lte(elections.startDate, now),
-          gte(elections.endDate, now)
+          gte(elections.endDate, now),
+          domainFilter
         )
       )
       .orderBy(elections.endDate)
       .limit(1)
 
     // 3. Get upcoming election (status='pending' or startDate > now, ordered by startDate)
+    // Filter by domain to only show elections the voter is eligible for
     const [upcomingElection] = await db
       .select()
       .from(elections)
       .where(
-        or(
-          eq(elections.status, 'pending'),
-          gte(elections.startDate, now)
+        and(
+          or(
+            eq(elections.status, 'pending'),
+            gte(elections.startDate, now)
+          ),
+          domainFilter
         )
       )
       .orderBy(elections.startDate)
@@ -103,10 +127,11 @@ export class DashboardService {
     const uniqueElectionIds = new Set(votesData.map(v => v.electionId))
     const electionsVotedIn = uniqueElectionIds.size
 
-    // - Total elections count
+    // - Total eligible elections count (filtered by domain)
     const [totalElections] = await db
       .select({ count: sql<number>`count(*)` })
       .from(elections)
+      .where(domainFilter)
 
     return {
       profile: {
@@ -124,6 +149,7 @@ export class DashboardService {
       },
       activeElection: activeElection ? {
         id: activeElection.id,
+        slug: activeElection.slug,
         name: activeElection.name,
         description: activeElection.description,
         startDate: activeElection.startDate,
@@ -133,6 +159,7 @@ export class DashboardService {
       } : null,
       upcomingElection: upcomingElection ? {
         id: upcomingElection.id,
+        slug: upcomingElection.slug,
         name: upcomingElection.name,
         description: upcomingElection.description,
         startDate: upcomingElection.startDate,

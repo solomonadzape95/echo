@@ -2,11 +2,12 @@ import { Hono } from 'hono'
 import { electionController } from '../controllers/election.controller'
 import { resultController } from '../controllers/result.controller'
 import { authMiddleware } from '../middleware/auth.middleware'
+import { optionalAuthMiddleware } from '../middleware/optionalAuth.middleware'
 
 const election = new Hono()
 
-// GET /election - Get all elections (public)
-election.get('/', (c) => electionController.getAll(c))
+// GET /election - Get all elections (public, but filters by domain if authenticated)
+election.get('/', optionalAuthMiddleware, (c) => electionController.getAll(c))
 
 // GET /election/active - Get active elections (public)
 election.get('/active', (c) => electionController.getActive(c))

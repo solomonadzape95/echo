@@ -17,7 +17,21 @@ voter.get('/', async (c) => {
   try {
     const classId = c.req.query('classId')
     
-    let query = db.select().from(voters)
+    // Build query with joins to get class details
+    let query = db
+      .select({
+        id: voters.id,
+        username: voters.username,
+        regNumber: voters.regNumber,
+        profilePicture: voters.profilePicture,
+        classId: voters.class,
+        createdAt: voters.createdAt,
+        classLevel: classes.level,
+        department: classes.department,
+        faculty: classes.faculty,
+      })
+      .from(voters)
+      .leftJoin(classes, eq(voters.class, classes.id))
     
     if (classId) {
       query = query.where(eq(voters.class, classId)) as any
@@ -31,7 +45,14 @@ voter.get('/', async (c) => {
         id: v.id,
         username: v.username,
         regNumber: v.regNumber,
-        class: v.class,
+        profilePicture: v.profilePicture || null,
+        class: v.classLevel || v.classId || null, // Use class level name, fallback to ID
+        classId: v.classId,
+        classDetails: v.classLevel ? {
+          level: v.classLevel,
+          department: v.department,
+          faculty: v.faculty,
+        } : null,
         createdAt: v.createdAt,
         // Don't return password
       })),
@@ -158,8 +179,19 @@ voter.get('/:id', async (c) => {
     const id = c.req.param('id')
     
     const [voter] = await db
-      .select()
+      .select({
+        id: voters.id,
+        username: voters.username,
+        regNumber: voters.regNumber,
+        profilePicture: voters.profilePicture,
+        classId: voters.class,
+        createdAt: voters.createdAt,
+        classLevel: classes.level,
+        department: classes.department,
+        faculty: classes.faculty,
+      })
       .from(voters)
+      .leftJoin(classes, eq(voters.class, classes.id))
       .where(eq(voters.id, id))
       .limit(1)
     
@@ -176,7 +208,14 @@ voter.get('/:id', async (c) => {
         id: voter.id,
         username: voter.username,
         regNumber: voter.regNumber,
-        class: voter.class,
+        profilePicture: voter.profilePicture || null,
+        class: voter.classLevel || voter.classId || null, // Use class level name, fallback to ID
+        classId: voter.classId,
+        classDetails: voter.classLevel ? {
+          level: voter.classLevel,
+          department: voter.department,
+          faculty: voter.faculty,
+        } : null,
         createdAt: voter.createdAt,
         // Don't return password
       },

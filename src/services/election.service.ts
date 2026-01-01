@@ -1,7 +1,9 @@
-import { eq, and, sql, lte, gte } from 'drizzle-orm'
+import { eq, and, sql, lte, gte, or } from 'drizzle-orm'
 import { db } from '../db/db'
 import { elections } from '../models/election.schema'
 import { offices } from '../models/office.schema'
+import { voters } from '../models/voter.schema'
+import { classes } from '../models/class.schema'
 import type { CreateElectionInput, UpdateElectionInput } from '../validators/election.validator'
 import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
 
@@ -122,6 +124,53 @@ export class ElectionService {
     // Update statuses before fetching
     await this.updateElectionStatuses()
     return await db.select().from(elections)
+  }
+
+  /**
+   * Get elections eligible for a specific voter (filtered by domain)
+   * Returns elections where domainId matches voter's class, department, or faculty
+   */
+  async getEligibleForVoter(voterId: string) {
+    // Update statuses before fetching
+    await this.updateElectionStatuses()
+
+    // 1. Get voter with their class
+    const [voter] = await db
+      .select()
+      .from(voters)
+      .where(eq(voters.id, voterId))
+      .limit(1)
+
+    if (!voter || !voter.class) {
+      // Voter has no class - return empty array
+      return []
+    }
+
+    // 2. Get voter's class with department and faculty
+    const [voterClass] = await db
+      .select()
+      .from(classes)
+      .where(eq(classes.id, voter.class))
+      .limit(1)
+
+    if (!voterClass) {
+      // Voter class not found - return empty array
+      return []
+    }
+
+    // 3. Get all elections where domainId matches voter's class, department, or faculty
+    const eligibleElections = await db
+      .select()
+      .from(elections)
+      .where(
+        or(
+          eq(elections.domainId, voter.class), // Match class elections
+          eq(elections.domainId, voterClass.department), // OR match department elections
+          eq(elections.domainId, voterClass.faculty) // OR match faculty elections
+        )
+      )
+
+    return eligibleElections
   }
 
   /**
