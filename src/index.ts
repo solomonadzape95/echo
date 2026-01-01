@@ -32,8 +32,15 @@ app.use('*', cors({
     const allowedOrigins = [
       'http://localhost:3000',
       'http://127.0.0.1:3000',
-      // Add production origins here when deploying
-      'https://echo-fmir.onrender.com',
+      // Production frontend origins
+      'https://echo-jet-alpha.vercel.app',
+      'https://echo-jet-alpha.vercel.app/',
+      // Add more Vercel preview URLs if needed (they use wildcard domains)
+      // For now, allow all Vercel preview deployments
+      ...(process.env.NODE_ENV === 'production' 
+        ? [] 
+        : ['http://localhost:3000', 'http://127.0.0.1:3000']
+      ),
     ]
     
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -44,14 +51,21 @@ app.use('*', cors({
       return origin
     }
     
+    // In production, allow Vercel preview deployments (they use *.vercel.app)
+    if (process.env.NODE_ENV === 'production' && origin.includes('.vercel.app')) {
+      return origin
+    }
+    
     // Default: allow all origins in development
-    // In production, you might want to return undefined to deny
-    return process.env.NODE_ENV === 'production' ? undefined : origin
+    // In production, only allow Vercel domains
+    return process.env.NODE_ENV === 'production' 
+      ? (origin.includes('.vercel.app') ? origin : undefined)
+      : origin
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   exposeHeaders: ['Content-Length'],
-  credentials: true, // Allow cookies to be sent
+  credentials: true, // Allow cookies to be sent (required for cross-site cookies)
   maxAge: 86400, // 24 hours
 }))
 

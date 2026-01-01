@@ -4,22 +4,28 @@ import { setCookie, getCookie } from 'hono/cookie'
 /**
  * Cookie configuration for secure token storage
  * 
- * Note: For cross-origin requests (different domains), we use 'none' with secure flag.
- * For same-origin or same-site requests, 'lax' provides better CSRF protection.
+ * Note: For cross-origin requests (different domains), we MUST use 'none' with secure flag.
+ * This is required when frontend and backend are on different domains (e.g., Vercel + Render).
+ * 
+ * In production, frontend (Vercel) and backend (Render) are on different domains,
+ * so we always use 'none' with 'secure: true' in production.
  */
 const getCookieOptions = () => {
   const isProduction = process.env.NODE_ENV === 'production';
-  const isCrossOrigin = process.env.FRONTEND_URL && 
-    process.env.FRONTEND_URL !== process.env.API_URL;
   
-  // For cross-origin scenarios, use 'none' with secure flag (requires HTTPS)
-  // For same-origin, use 'lax' for better CSRF protection
-  const sameSite = (isCrossOrigin && isProduction) ? 'none' as const : 'lax' as const;
+  // In production, frontend and backend are on different domains (Vercel vs Render)
+  // So we MUST use 'none' with 'secure: true' for cross-site cookies
+  // In development, if same origin, we can use 'lax'
+  const sameSite = isProduction ? 'none' as const : 'lax' as const;
+  
+  // Secure flag MUST be true when using 'none' (required by browsers)
+  // Also use secure in production for better security
+  const secure = true; // Always use secure in production, and required for 'none'
   
   return {
     httpOnly: true,        // Prevents JavaScript access (XSS protection)
-    secure: isProduction || sameSite === 'none', // HTTPS required for 'none', recommended for production
-    sameSite,              // CSRF protection - 'lax' for same-site, 'none' for cross-origin
+    secure,                // HTTPS required for 'none', always true
+    sameSite,              // 'none' for cross-site (production), 'lax' for same-site (dev)
     path: '/',            // Available on all paths
     maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
   };
