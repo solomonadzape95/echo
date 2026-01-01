@@ -4,10 +4,12 @@ import { voters } from '../models/voter.schema'
 import { admins } from '../models/admin.schema'
 import { refreshTokens } from '../models/refreshToken.schema'
 import { masterlist } from '../models/masterlist.schema'
-import type { LoginInput, RegisterInput } from '../validators/auth.validator'
+import type { LoginInput, RegisterInput, ResetPasswordInput, ChangePasswordInput } from '../validators/auth.validator'
 import * as bcrypt from 'bcryptjs'
 import { generateAccessToken } from '../helpers/jwt.helpers'
 import { refreshTokenService } from './refreshToken.service'
+import { passwordResetService } from './passwordReset.service'
+import { emailService } from './email.service'
 import type { JwtPayload } from '../types/jwt.types'
 
 
@@ -124,6 +126,14 @@ export class AuthService {
     
     // Generate and store refresh token (long-lived: 7 days)
     const refreshToken = await refreshTokenService.createRefreshToken(newVoter.id, jwtPayload)
+
+    // Send welcome email (non-blocking - don't fail registration if email fails)
+    const emailDomain = process.env.EMAIL_DOMAIN || 'echo-platform.local'
+    const email = `${input.regNumber.replace(/\//g, '-')}@${emailDomain}`
+    emailService.sendWelcomeEmail(email, username).catch((error) => {
+      console.error('[AUTH SERVICE] Failed to send welcome email:', error)
+      // Don't block registration if email fails
+    })
 
     // Return user without password and tokens
     const { password, ...userWithoutPassword } = newVoter
@@ -268,6 +278,121 @@ export class AuthService {
         isAdmin: false,
       }
     }
+  }
+
+  /**
+   * Request password reset - generates a reset token and sends email
+   */
+  async requestPasswordReset(regNumber: string, email: string) {
+    const user = await this.findByRegistrationNumber(regNumber)
+    
+    if (!user) {
+      // Don't reveal if user exists (security best practice)
+      return { success: true }
+    }
+    
+    // Get user's name from masterlist for email personalization
+    const [masterlistEntry] = await db
+      .select()
+      .from(masterlist)
+      .where(eq(masterlist.regNo, regNumber))
+      .limit(1)
+    
+    const userName = masterlistEntry?.name || user.username
+    
+    // Generate reset token
+    const token = await passwordResetService.createResetToken(user.id)
+    
+    // Send password reset email to the provided email address
+    const emailResult = await emailService.sendPasswordResetEmail(
+      email,
+      userName,
+      token
+    )
+    
+    if (!emailResult.success) {
+      console.error('[AUTH SERVICE] Failed to send password reset email:', emailResult.message)
+      // Still return success to user (don't reveal email failure)
+      // In development, return token for testing
+      if (process.env.NODE_ENV === 'development') {
+        return { success: true, token, emailError: emailResult.message }
+      }
+    }
+    
+    // In development, return token for testing (remove in production)
+    return process.env.NODE_ENV === 'development' 
+      ? { success: true, token } 
+      : { success: true }
+  }
+
+  /**
+   * Reset password using reset token
+   */
+  async resetPassword(input: ResetPasswordInput) {
+    // Verify token
+    const voterId = await passwordResetService.verifyResetToken(input.token)
+    
+    if (!voterId) {
+      throw new Error('Invalid or expired reset token')
+    }
+    
+    // Find user
+    const [user] = await db
+      .select()
+      .from(voters)
+      .where(eq(voters.id, voterId))
+      .limit(1)
+    
+    if (!user) {
+      throw new Error('User not found')
+    }
+    
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(input.password, 10)
+    
+    // Update password
+    await db
+      .update(voters)
+      .set({ password: hashedPassword })
+      .where(eq(voters.id, voterId))
+    
+    // Mark token as used
+    await passwordResetService.markTokenAsUsed(input.token)
+    
+    return { success: true }
+  }
+
+  /**
+   * Change password for authenticated user
+   */
+  async changePassword(userId: string, input: ChangePasswordInput) {
+    // Find user
+    const [user] = await db
+      .select()
+      .from(voters)
+      .where(eq(voters.id, userId))
+      .limit(1)
+    
+    if (!user) {
+      throw new Error('User not found')
+    }
+    
+    // Verify current password
+    const isValidPassword = await bcrypt.compare(input.currentPassword, user.password)
+    if (!isValidPassword) {
+      throw new Error('Current password is incorrect')
+    }
+    
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(input.newPassword, 10)
+    
+    // Update password
+    await db
+      .update(voters)
+      .set({ password: hashedPassword })
+      .where(eq(voters.id, userId))
+    
+    return { success: true }
   }
 }
 

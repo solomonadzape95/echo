@@ -1,6 +1,6 @@
 import { Context } from 'hono'
 import { authService } from '../services/auth.service'
-import { loginSchema, registerSchema, forgotPasswordSchema } from '../validators/auth.validator'
+import { loginSchema, registerSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } from '../validators/auth.validator'
 import { setAccessTokenCookie, setRefreshTokenCookie, clearTokenCookies, getRefreshTokenFromCookie } from '../helpers/cookie.helpers'
 import { refreshTokenService } from '../services/refreshToken.service'
 
@@ -109,21 +109,18 @@ export class AuthController {
       const body = await c.req.json()
       const validatedData = forgotPasswordSchema.parse(body)
 
-      // Find user
-      const user = await authService.findByRegistrationNumber(validatedData.regNumber)
+      // Request password reset (generates token and sends email)
+      const result = await authService.requestPasswordReset(
+        validatedData.regNumber,
+        validatedData.email
+      )
 
-      if (!user) {
-        return c.json({
-          success: false,
-          message: 'User not found or registration number does not match',
-        }, 404)
-      }
-
-      // TODO: Implement password reset logic (send email, generate token, etc.)
-
+      // Always return success (don't reveal if user exists)
       return c.json({
         success: true,
-        message: 'Password reset instructions sent',
+        message: 'If an account exists with this registration number, password reset instructions have been sent to your email.',
+        // In development, include token for testing (remove in production)
+        ...(process.env.NODE_ENV === 'development' && result.token ? { token: result.token } : {}),
       }, 200)
     } catch (error: any) {
       // Handle validation errors
@@ -139,6 +136,81 @@ export class AuthController {
         success: false,
         message: error.message || 'Request failed',
       }, 500)
+    }
+  }
+
+  /**
+   * Handle reset password request
+   */
+  async resetPassword(c: Context) {
+    try {
+      // Parse and validate request body
+      const body = await c.req.json()
+      const validatedData = resetPasswordSchema.parse(body)
+
+      // Reset password
+      await authService.resetPassword(validatedData)
+
+      return c.json({
+        success: true,
+        message: 'Password reset successfully',
+      }, 200)
+    } catch (error: any) {
+      // Handle validation errors
+      if (error.name === 'ZodError') {
+        return c.json({
+          success: false,
+          message: 'Validation error',
+          errors: error.errors,
+        }, 400)
+      }
+
+      return c.json({
+        success: false,
+        message: error.message || 'Password reset failed',
+      }, 400)
+    }
+  }
+
+  /**
+   * Handle change password request (for authenticated users)
+   */
+  async changePassword(c: Context) {
+    try {
+      // Get user from context (set by authMiddleware)
+      const user = c.get('user')
+      if (!user || !user.id) {
+        return c.json({
+          success: false,
+          message: 'Unauthorized',
+        }, 401)
+      }
+
+      // Parse and validate request body
+      const body = await c.req.json()
+      const validatedData = changePasswordSchema.parse(body)
+
+      // Change password
+      await authService.changePassword(user.id, validatedData)
+
+      return c.json({
+        success: true,
+        message: 'Password changed successfully',
+      }, 200)
+    } catch (error: any) {
+      // Handle validation errors
+      if (error.name === 'ZodError') {
+        return c.json({
+          success: false,
+          message: 'Validation error',
+          errors: error.errors,
+        }, 400)
+      }
+
+      return c.json({
+        success: false,
+        message: error.message || 'Password change failed',
+      }, 400)
     }
   }
 
