@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { db } from '../db/db'
 import { elections } from '../models/election.schema'
 import { offices } from '../models/office.schema'
@@ -7,17 +7,22 @@ import { voters } from '../models/voter.schema'
 
 export class BallotService {
   /**
-   * Get complete ballot data for an election
+   * Get complete ballot data for an election (by ID or slug)
    * Returns election info, all offices, and candidates for each office
    */
-  async getBallotData(electionId: string) {
-    console.log('[BALLOT SERVICE] Getting ballot data for election:', electionId)
+  async getBallotData(electionIdentifier: string) {
+    console.log('[BALLOT SERVICE] Getting ballot data for election:', electionIdentifier)
 
-    // 1. Get election
+    // 1. Get election by ID or slug
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(electionIdentifier)
     const [election] = await db
       .select()
       .from(elections)
-      .where(eq(elections.id, electionId))
+      .where(
+        isUuid 
+          ? eq(elections.id, electionIdentifier)
+          : eq(elections.slug, electionIdentifier)
+      )
       .limit(1)
 
     if (!election) {

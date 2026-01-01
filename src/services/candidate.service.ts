@@ -3,7 +3,9 @@ import { db } from '../db/db'
 import { candidates } from '../models/candidate.schema'
 import { offices } from '../models/office.schema'
 import { voters } from '../models/voter.schema'
+import { masterlist } from '../models/masterlist.schema'
 import type { CreateCandidateInput, UpdateCandidateInput } from '../validators/candidate.validator'
+import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
 
 export class CandidateService {
   /**
@@ -21,14 +23,18 @@ export class CandidateService {
       throw new Error('Office not found')
     }
 
-    // Verify voter exists
-    const [voter] = await db
-      .select()
+    // Verify voter exists and get name from masterlist
+    const [voterData] = await db
+      .select({
+        voter: voters,
+        name: masterlist.name,
+      })
       .from(voters)
+      .leftJoin(masterlist, eq(voters.regNumber, masterlist.regNo))
       .where(eq(voters.id, input.voterId))
       .limit(1)
 
-    if (!voter) {
+    if (!voterData?.voter) {
       throw new Error('Voter not found')
     }
 
@@ -46,10 +52,26 @@ export class CandidateService {
       throw new Error('Candidate already exists for this office')
     }
 
+    // Generate unique slug from voter name or username
+    const nameForSlug = voterData.name || voterData.voter.username
+    const baseSlug = generateSlug(nameForSlug)
+    const slug = await generateUniqueSlug(
+      baseSlug,
+      async (slug) => {
+        const [existing] = await db
+          .select()
+          .from(candidates)
+          .where(eq(candidates.slug, slug))
+          .limit(1)
+        return !existing
+      }
+    )
+
     // Create candidate
     const [newCandidate] = await db
       .insert(candidates)
       .values({
+        slug,
         office: input.officeId,
         voterId: input.voterId,
         quote: input.quote || '',
@@ -76,6 +98,23 @@ export class CandidateService {
       .select()
       .from(candidates)
       .where(eq(candidates.id, id))
+      .limit(1)
+
+    if (!candidate) {
+      throw new Error('Candidate not found')
+    }
+
+    return candidate
+  }
+
+  /**
+   * Get candidate by slug
+   */
+  async getBySlug(slug: string) {
+    const [candidate] = await db
+      .select()
+      .from(candidates)
+      .where(eq(candidates.slug, slug))
       .limit(1)
 
     if (!candidate) {

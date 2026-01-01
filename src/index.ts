@@ -21,7 +21,7 @@ import ballot from './routes/ballot'
 import stats from './routes/stats'
 import enumRoute from './routes/enum'
 import officeTemplate from './routes/office-template'
-import storage from './routes/storage'
+import storage, { adminStorage } from './routes/storage'
 
 const app = new Hono()
 
@@ -162,7 +162,8 @@ app.route('/ballot', ballot)
 app.route('/stats', stats)
 app.route('/enum', enumRoute)
 app.route('/office-templates', officeTemplate)
-app.route('/admin/storage', storage)
+app.route('/storage', storage)
+app.route('/admin/storage', adminStorage)
 
 // For Bun's --hot flag, export server config instead of calling Bun.serve()
 // This allows hot reloading to work properly

@@ -7,6 +7,7 @@ export const electionStatus = pgEnum('election_status', ['pending', 'active', 'c
 export const elections = pgTable('elections', {
     id: uuid('id').primaryKey().defaultRandom().notNull(),
     name: varchar('name', {length: 255}).notNull(),
+    slug: varchar('slug', {length: 255}).notNull().unique(),
     type: electionType('type').notNull(),
     status: electionStatus('status').default('pending').notNull(),
     startDate: timestamp('start_date').notNull(),

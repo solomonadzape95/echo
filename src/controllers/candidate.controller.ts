@@ -58,10 +58,18 @@ export class CandidateController {
    */
   async getById(c: Context) {
     try {
-      const id = c.req.param('id')
-      const validatedId = candidateIdSchema.parse({ id })
-
-      const candidate = await candidateService.getById(validatedId.id)
+      const identifier = c.req.param('id')
+      
+      // Try to get by slug first (if it's not a UUID), then by ID
+      let candidate
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)
+      
+      if (isUuid) {
+        const validatedId = candidateIdSchema.parse({ id: identifier })
+        candidate = await candidateService.getById(validatedId.id)
+      } else {
+        candidate = await candidateService.getBySlug(identifier)
+      }
 
       return c.json({
         success: true,

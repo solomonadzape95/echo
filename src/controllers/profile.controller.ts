@@ -37,6 +37,44 @@ export class ProfileController {
       }, 500)
     }
   }
+
+  /**
+   * Update profile picture for authenticated voter
+   * PUT /profile/picture
+   */
+  async updateProfilePicture(c: Context) {
+    try {
+      const user = c.get('user')
+      if (!user || !user.id) {
+        return c.json({
+          success: false,
+          message: 'Unauthorized: User not found in token',
+        }, 401)
+      }
+
+      const body = await c.req.json()
+      const { profilePicture } = body
+
+      if (!profilePicture || typeof profilePicture !== 'string') {
+        return c.json({
+          success: false,
+          message: 'Profile picture URL is required',
+        }, 400)
+      }
+
+      await profileService.updateProfilePicture(user.id, profilePicture)
+
+      return c.json({
+        success: true,
+        message: 'Profile picture updated successfully',
+      }, 200)
+    } catch (error: any) {
+      return c.json({
+        success: false,
+        message: error.message || 'Failed to update profile picture',
+      }, 500)
+    }
+  }
 }
 
 export const profileController = new ProfileController()

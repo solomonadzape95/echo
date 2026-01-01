@@ -16,7 +16,10 @@
     "test:voting": "bun run scripts/test-voting.ts",
     "test:services": "bun run scripts/test-services.ts",
     "migrate:enums": "bun run scripts/migrate-to-enums.ts",
-    "migrate:domain-id": "bun run scripts/migrate-domain-id-to-string.ts"
+    "migrate:domain-id": "bun run scripts/migrate-domain-id-to-string.ts",
+    "rls:disable": "bun run scripts/setup-rls.ts disable",
+    "rls:enable": "bun run scripts/setup-rls.ts enable",
+    "rls:status": "bun run scripts/setup-rls.ts status"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

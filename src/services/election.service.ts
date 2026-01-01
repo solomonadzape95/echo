@@ -3,6 +3,7 @@ import { db } from '../db/db'
 import { elections } from '../models/election.schema'
 import { offices } from '../models/office.schema'
 import type { CreateElectionInput, UpdateElectionInput } from '../validators/election.validator'
+import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
 
 export class ElectionService {
   /**
@@ -18,11 +19,26 @@ export class ElectionService {
       throw new Error('End date must be after start date')
     }
 
+    // Generate unique slug
+    const baseSlug = generateSlug(input.name)
+    const slug = await generateUniqueSlug(
+      baseSlug,
+      async (slug) => {
+        const [existing] = await db
+          .select()
+          .from(elections)
+          .where(eq(elections.slug, slug))
+          .limit(1)
+        return !existing
+      }
+    )
+
     // Create election
     const [newElection] = await db
       .insert(elections)
       .values({
         name: input.name,
+        slug,
         type: input.type,
         status: input.status || 'pending',
         startDate,
@@ -38,12 +54,30 @@ export class ElectionService {
 
     // If offices are provided, create them for this election
     if (input.offices && input.offices.length > 0) {
-      const officeValues = input.offices.map(office => ({
-        name: office.title,
-        description: office.description,
-        election: newElection.id,
-        dependsOn: null, // No dependencies by default
-      }))
+      // Generate slugs for each office
+      const officeValues = await Promise.all(
+        input.offices.map(async (office) => {
+          const baseSlug = generateSlug(office.title)
+          const slug = await generateUniqueSlug(
+            baseSlug,
+            async (slug) => {
+              const [existing] = await db
+                .select()
+                .from(offices)
+                .where(eq(offices.slug, slug))
+                .limit(1)
+              return !existing
+            }
+          )
+          return {
+            name: office.title,
+            slug,
+            description: office.description,
+            election: newElection.id,
+            dependsOn: null, // No dependencies by default
+          }
+        })
+      )
 
       await db.insert(offices).values(officeValues)
     }
@@ -100,6 +134,25 @@ export class ElectionService {
       .select()
       .from(elections)
       .where(eq(elections.id, id))
+      .limit(1)
+
+    if (!election) {
+      throw new Error('Election not found')
+    }
+
+    return election
+  }
+
+  /**
+   * Get election by slug (with automatic status update)
+   */
+  async getBySlug(slug: string) {
+    // Update statuses before fetching
+    await this.updateElectionStatuses()
+    const [election] = await db
+      .select()
+      .from(elections)
+      .where(eq(elections.slug, slug))
       .limit(1)
 
     if (!election) {

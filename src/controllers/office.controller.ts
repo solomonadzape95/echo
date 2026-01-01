@@ -136,10 +136,18 @@ export class OfficeController {
    */
   async getById(c: Context) {
     try {
-      const id = c.req.param('id')
-      const validatedId = officeIdSchema.parse({ id })
-
-      const office = await officeService.getById(validatedId.id)
+      const identifier = c.req.param('id')
+      
+      // Try to get by slug first (if it's not a UUID), then by ID
+      let office
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)
+      
+      if (isUuid) {
+        const validatedId = officeIdSchema.parse({ id: identifier })
+        office = await officeService.getById(validatedId.id)
+      } else {
+        office = await officeService.getBySlug(identifier)
+      }
 
       return c.json({
         success: true,

@@ -60,14 +60,22 @@ export class ElectionController {
   }
 
   /**
-   * Get election by ID
+   * Get election by ID or slug
    */
   async getById(c: Context) {
     try {
-      const id = c.req.param('id')
-      const validatedId = electionIdSchema.parse({ id })
-
-      const election = await electionService.getById(validatedId.id)
+      const identifier = c.req.param('id')
+      
+      // Try to get by slug first (if it's not a UUID), then by ID
+      let election
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)
+      
+      if (isUuid) {
+        const validatedId = electionIdSchema.parse({ id: identifier })
+        election = await electionService.getById(validatedId.id)
+      } else {
+        election = await electionService.getBySlug(identifier)
+      }
 
       return c.json({
         success: true,

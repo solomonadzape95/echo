@@ -24,6 +24,7 @@ export class ProfileService {
         regNumber: voters.regNumber,
         classId: voters.class,
         createdAt: voters.createdAt,
+        profilePicture: voters.profilePicture,
         classLevel: classes.level,
         department: classes.department, // Now enum value directly
         faculty: classes.faculty, // Now enum value directly
@@ -64,6 +65,7 @@ export class ProfileService {
         username: voter.username,
         regNumber: voter.regNumber,
         name: voter.name || voter.username,
+        profilePicture: voter.profilePicture || null,
         class: voter.classId ? {
           id: voter.classId,
           name: voter.classLevel,
@@ -82,6 +84,23 @@ export class ProfileService {
         receiptCode: vote.receiptCode,
       })),
     }
+  }
+
+  /**
+   * Update profile picture for a voter
+   */
+  async updateProfilePicture(voterId: string, profilePictureUrl: string) {
+    const [updated] = await db
+      .update(voters)
+      .set({ profilePicture: profilePictureUrl })
+      .where(eq(voters.id, voterId))
+      .returning()
+
+    if (!updated) {
+      throw new Error('Voter not found')
+    }
+
+    return updated
   }
 }
 

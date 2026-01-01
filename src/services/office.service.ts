@@ -3,6 +3,7 @@ import { db } from '../db/db'
 import { offices } from '../models/office.schema'
 import { elections } from '../models/election.schema'
 import type { CreateOfficeInput, UpdateOfficeInput } from '../validators/office.validator'
+import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
 
 export class OfficeService {
   /**
@@ -61,11 +62,26 @@ export class OfficeService {
       throw new Error('Office already exists for this election')
     }
 
+    // Generate unique slug
+    const baseSlug = generateSlug(input.name)
+    const slug = await generateUniqueSlug(
+      baseSlug,
+      async (slug) => {
+        const [existing] = await db
+          .select()
+          .from(offices)
+          .where(eq(offices.slug, slug))
+          .limit(1)
+        return !existing
+      }
+    )
+
     // Create office
     const [newOffice] = await db
       .insert(offices)
       .values({
         name: input.name,
+        slug,
         description: input.description,
         election: input.election,
         dependsOn: input.dependsOn || null,
@@ -94,6 +110,23 @@ export class OfficeService {
       .select()
       .from(offices)
       .where(eq(offices.id, id))
+      .limit(1)
+
+    if (!office) {
+      throw new Error('Office not found')
+    }
+
+    return office
+  }
+
+  /**
+   * Get office by slug
+   */
+  async getBySlug(slug: string) {
+    const [office] = await db
+      .select()
+      .from(offices)
+      .where(eq(offices.slug, slug))
       .limit(1)
 
     if (!office) {

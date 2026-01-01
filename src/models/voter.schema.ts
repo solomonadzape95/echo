@@ -8,5 +8,6 @@ export const voters = pgTable('voters', {
     regNumber: varchar('reg_number', {length: 255}).notNull().unique(),
     class: uuid('class').references(() => classes.id).notNull(),
     password: varchar('password', {length: 255}).notNull(),
+    profilePicture: varchar('profile_picture', {length: 500}),
     ...timestamps,
 })
