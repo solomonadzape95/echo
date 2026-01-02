@@ -64,6 +64,20 @@
       "when": 1766946649265,
       "tag": "0008_closed_silver_fox",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1767289143466,
+      "tag": "0009_smiling_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1767306642506,
+      "tag": "0010_flimsy_taskmaster",
+      "breakpoints": true
     }
   ]
 }

@@ -42,10 +42,22 @@ export class ElectionController {
 
   /**
    * Get all elections
+   * If user is authenticated, filter by domain (class, department, faculty)
+   * If not authenticated, return all elections (for public viewing)
    */
   async getAll(c: Context) {
     try {
-      const elections = await electionService.getAll()
+      // Check if user is authenticated (optional - for domain filtering)
+      const user = c.get('user')
+      let elections
+
+      if (user && user.id) {
+        // User is authenticated - filter by domain
+        elections = await electionService.getEligibleForVoter(user.id)
+      } else {
+        // Not authenticated - return all elections
+        elections = await electionService.getAll()
+      }
 
       return c.json({
         success: true,
@@ -61,10 +73,12 @@ export class ElectionController {
 
   /**
    * Get election by ID or slug
+   * If user is authenticated, check eligibility before returning
    */
   async getById(c: Context) {
     try {
       const identifier = c.req.param('id')
+      const user = c.get('user')
       
       // Try to get by slug first (if it's not a UUID), then by ID
       let election
@@ -75,6 +89,19 @@ export class ElectionController {
         election = await electionService.getById(validatedId.id)
       } else {
         election = await electionService.getBySlug(identifier)
+      }
+
+      // If user is authenticated, check eligibility
+      if (user && user.id) {
+        const { checkEligibilityByDomain } = await import('../helpers/eligibility.helpers')
+        const eligibility = await checkEligibilityByDomain(user.id, election.id)
+        
+        if (!eligibility.eligible) {
+          return c.json({
+            success: false,
+            message: eligibility.reason || 'You are not eligible to view this election',
+          }, 403)
+        }
       }
 
       return c.json({

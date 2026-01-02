@@ -91,20 +91,27 @@ export class CandidateService {
   }
 
   /**
-   * Get candidate by ID
+   * Get candidate by ID with voter profile picture
    */
   async getById(id: string) {
-    const [candidate] = await db
-      .select()
+    const [candidateData] = await db
+      .select({
+        candidate: candidates,
+        voterProfilePicture: voters.profilePicture,
+      })
       .from(candidates)
+      .leftJoin(voters, eq(candidates.voterId, voters.id))
       .where(eq(candidates.id, id))
       .limit(1)
 
-    if (!candidate) {
+    if (!candidateData?.candidate) {
       throw new Error('Candidate not found')
     }
 
-    return candidate
+    return {
+      ...candidateData.candidate,
+      voterProfilePicture: candidateData.voterProfilePicture || null,
+    }
   }
 
   /**

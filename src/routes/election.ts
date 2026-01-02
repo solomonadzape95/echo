@@ -29,8 +29,8 @@ election.get('/:id/results/status', (c) => resultController.checkResultsStatus(c
 // Must come before /:id to avoid route conflicts
 election.get('/:id/results', (c) => resultController.getResults(c))
 
-// GET /election/:id - Get election by ID (public)
-election.get('/:id', (c) => electionController.getById(c))
+// GET /election/:id - Get election by ID (public, but checks eligibility if authenticated)
+election.get('/:id', optionalAuthMiddleware, (c) => electionController.getById(c))
 
 // POST /election - Create new election (requires auth)
 election.post('/', authMiddleware, (c) => electionController.create(c))
