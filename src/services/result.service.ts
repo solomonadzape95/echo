@@ -369,6 +369,7 @@ export class ResultService {
         voteCount: number
         percentage: number
         isWinner: boolean
+        image?: string
       }>
       totalVotes: number
     }> = {}
@@ -388,6 +389,9 @@ export class ResultService {
 
       // Get candidate name from voter (already joined in query)
       const candidateName = row.voter?.username || `Candidate ${row.candidate.id.substring(0, 8)}`
+      
+      // Use candidate image if available, otherwise use voter profile picture
+      const candidateImage = row.candidate.image || row.voter?.profilePicture || undefined
 
       officesMap[officeId].candidates.push({
         candidateId: row.candidate.id,
@@ -395,6 +399,7 @@ export class ResultService {
         voteCount: row.result.voteCount,
         percentage: parseFloat(row.result.percentage),
         isWinner: false, // Will be set below
+        image: candidateImage,
       })
 
       officesMap[officeId].totalVotes += row.result.voteCount
