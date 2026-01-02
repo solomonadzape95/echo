@@ -198,19 +198,29 @@ export class AuthService {
     // Find the token that matches the hash
     let matchingToken = null
     for (const storedToken of userTokens) {
-      const isValid = await bcrypt.compare(refreshToken, storedToken.tokenHash)
-      if (isValid) {
-        matchingToken = storedToken
-        break
+      try {
+        const isValid = await bcrypt.compare(refreshToken, storedToken.tokenHash)
+        if (isValid) {
+          matchingToken = storedToken
+          break
+        }
+      } catch (compareError) {
+        // If bcrypt.compare fails (e.g., invalid hash format), log and continue
+        console.error('[AUTH SERVICE] Error comparing token hash:', compareError)
+        continue
       }
     }
     
     if (!matchingToken) {
+      console.error('[AUTH SERVICE] No matching token found for user:', decoded.id)
+      console.error('[AUTH SERVICE] Found tokens:', userTokens.length)
       throw new Error('Invalid or revoked refresh token')
     }
     
     // Determine if this is an admin or voter token
+    // Check adminId first, then voterId
     const isAdmin = matchingToken.adminId !== null && matchingToken.adminId === decoded.id
+    const isVoter = matchingToken.voterId !== null && matchingToken.voterId === decoded.id
     
     if (isAdmin) {
       // Fetch admin data
@@ -242,41 +252,44 @@ export class AuthService {
         admin: adminWithoutPassword,
         isAdmin: true,
       }
-    } else {
+    } else if (isVoter) {
       // Fetch voter data
-    const [user] = await db
-      .select()
-      .from(voters)
-      .where(eq(voters.id, decoded.id))
-      .limit(1)
-    
-    if (!user) {
-      throw new Error('User not found')
-    }
-    
-    // Create new JWT payload
-    const jwtPayload: JwtPayload = {
-      id: user.id,
-      regNumber: user.regNumber,
-      username: user.username,
-      classId: user.class,
-    }
-    
-    // Generate new access token
-    const accessToken = await generateAccessToken(jwtPayload)
-    
-    return {
-      accessToken,
-      user: {
+      const [user] = await db
+        .select()
+        .from(voters)
+        .where(eq(voters.id, decoded.id))
+        .limit(1)
+      
+      if (!user) {
+        throw new Error('User not found')
+      }
+      
+      // Create new JWT payload
+      const jwtPayload: JwtPayload = {
         id: user.id,
         regNumber: user.regNumber,
         username: user.username,
-        class: user.class,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
+        classId: user.class,
+      }
+      
+      // Generate new access token
+      const accessToken = await generateAccessToken(jwtPayload)
+      
+      return {
+        accessToken,
+        user: {
+          id: user.id,
+          regNumber: user.regNumber,
+          username: user.username,
+          class: user.class,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
         isAdmin: false,
       }
+    } else {
+      // Token doesn't match either admin or voter - this shouldn't happen
+      throw new Error('Invalid token: token does not match any user or admin')
     }
   }
 
