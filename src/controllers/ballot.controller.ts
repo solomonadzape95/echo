@@ -6,7 +6,8 @@ export class BallotController {
   /**
    * Get ballot data for an election
    * GET /ballot?electionId=xxx
-   * Requires authentication and eligibility check
+   * Requires authentication and eligibility check (unless admin)
+   * Admins can view all ballots
    */
   async getBallot(c: Context) {
     try {
@@ -14,6 +15,7 @@ export class BallotController {
       
       // Check authentication
       const user = c.get('user')
+      const admin = c.get('admin')
       if (!user || !user.id) {
         return c.json({
           success: false,
@@ -30,13 +32,16 @@ export class BallotController {
         }, 400)
       }
 
-      // Check eligibility before fetching ballot data
-      const eligibility = await checkEligibilityByDomain(user.id, electionId)
-      if (!eligibility.eligible) {
-        return c.json({
-          success: false,
-          message: eligibility.reason || 'You are not eligible to vote in this election',
-        }, 403)
+      // Check eligibility before fetching ballot data (unless admin)
+      // Admins can view all ballots without eligibility checks
+      if (!admin) {
+        const eligibility = await checkEligibilityByDomain(user.id, electionId)
+        if (!eligibility.eligible) {
+          return c.json({
+            success: false,
+            message: eligibility.reason || 'You are not eligible to vote in this election',
+          }, 403)
+        }
       }
 
       console.log('[BALLOT CONTROLLER] Getting ballot data for election:', electionId)

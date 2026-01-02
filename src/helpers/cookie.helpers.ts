@@ -17,6 +17,7 @@ const getCookieOptions = () => {
   // So we MUST use 'none' with 'secure: true' for cross-site cookies
   // In development, if same origin, we can use 'lax'
   const sameSite = 'none' as const ;
+  const partitioned = true;
   
   // Secure flag MUST be true when using 'none' (required by browsers)
   // Also use secure in production for better security
@@ -25,7 +26,8 @@ const getCookieOptions = () => {
   return {
     httpOnly: true,        // Prevents JavaScript access (XSS protection)
     secure,                // HTTPS required for 'none', always true
-    sameSite,              // 'none' for cross-site (production), 'lax' for same-site (dev)
+    sameSite,  
+    partitioned, // 'none' for cross-site (production), 'lax' for same-site (dev)
     path: '/',            // Available on all paths
     maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
   };

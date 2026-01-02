@@ -36,6 +36,7 @@ export class DashboardService {
         regNumber: voters.regNumber,
         classId: voters.class,
         createdAt: voters.createdAt,
+        profilePicture: voters.profilePicture,
         classLevel: classes.level,
         department: classes.department, // Now enum value directly
         faculty: classes.faculty, // Now enum value directly
@@ -139,6 +140,7 @@ export class DashboardService {
         username: voter.username,
         regNumber: voter.regNumber,
         name: voter.name || voter.username, // Use name from masterlist, fallback to username
+        profilePicture: voter.profilePicture || null,
         class: voter.classId ? {
           id: voter.classId,
           name: voter.classLevel,
