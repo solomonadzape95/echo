@@ -1,9 +1,15 @@
-import { eq, and, sql, lte, gte, or } from 'drizzle-orm'
+import { eq, and, sql, lte, gte, or, inArray } from 'drizzle-orm'
 import { db } from '../db/db'
 import { elections } from '../models/election.schema'
 import { offices } from '../models/office.schema'
 import { voters } from '../models/voter.schema'
 import { classes } from '../models/class.schema'
+import { results } from '../models/result.schema'
+import { receipts } from '../models/receipt.schema'
+import { votes } from '../models/vote.schema'
+import { tokens } from '../models/token.schema'
+import { issuances } from '../models/issuance.schema'
+import { candidates } from '../models/candidate.schema'
 import type { CreateElectionInput, UpdateElectionInput } from '../validators/election.validator'
 import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
 
@@ -315,28 +321,99 @@ export class ElectionService {
   }
 
   /**
-   * Delete election
+   * Delete election with cascading deletes
+   * Deletes all dependent entities in the correct order within a transaction:
+   * 1. Results (depends on election, office, candidate)
+   * 2. Receipts (depends on election and vote)
+   * 3. Votes (depends on election)
+   * 4. Tokens (depends on election)
+   * 5. Issuances (depends on election)
+   * 6. Candidates (depends on office, which depends on election)
+   * 7. Offices (depends on election)
+   * 8. Election (finally delete the election itself)
+   * 
+   * All deletions are wrapped in a transaction to ensure atomicity.
+   * If any deletion fails, all changes are rolled back.
    */
   async delete(id: string) {
-    // Check if election exists
-    const [existing] = await db
-      .select()
-      .from(elections)
-      .where(eq(elections.id, id))
-      .limit(1)
+    return await db.transaction(async (tx) => {
+      // Check if election exists
+      const [existing] = await tx
+        .select()
+        .from(elections)
+        .where(eq(elections.id, id))
+        .limit(1)
 
-    if (!existing) {
-      throw new Error('Election not found')
-    }
+      if (!existing) {
+        throw new Error('Election not found')
+      }
 
-    // TODO: Check if election has offices before deleting
-    // For now, let database foreign key constraint handle it
+      // Get all offices for this election (needed for deleting candidates and results)
+      const electionOffices = await tx
+        .select({ id: offices.id })
+        .from(offices)
+        .where(eq(offices.election, id))
 
-    await db
-      .delete(elections)
-      .where(eq(elections.id, id))
+      const officeIds = electionOffices.map(o => o.id)
 
-    return { success: true }
+      // Get all candidates for these offices (needed for deleting results)
+      let candidateIds: string[] = []
+      if (officeIds.length > 0) {
+        const electionCandidates = await tx
+          .select({ id: candidates.id })
+          .from(candidates)
+          .where(inArray(candidates.office, officeIds))
+        
+        candidateIds = electionCandidates.map(c => c.id)
+      }
+
+      // Delete in correct order to respect foreign key constraints
+      // 1. Delete results (depends on election, office, candidate)
+      await tx
+        .delete(results)
+        .where(eq(results.election, id))
+
+      // 2. Delete receipts (depends on election and vote)
+      await tx
+        .delete(receipts)
+        .where(eq(receipts.election, id))
+
+      // 3. Delete votes (depends on election)
+      await tx
+        .delete(votes)
+        .where(eq(votes.election, id))
+
+      // 4. Delete tokens (depends on election)
+      await tx
+        .delete(tokens)
+        .where(eq(tokens.election, id))
+
+      // 5. Delete issuances (depends on election)
+      await tx
+        .delete(issuances)
+        .where(eq(issuances.election, id))
+
+      // 6. Delete candidates (depends on office, which depends on election)
+      if (officeIds.length > 0) {
+        await tx
+          .delete(candidates)
+          .where(inArray(candidates.office, officeIds))
+      }
+
+      // 7. Delete offices (depends on election)
+      if (officeIds.length > 0) {
+        await tx
+          .delete(offices)
+          .where(eq(offices.election, id))
+      }
+
+      // 8. Finally, delete the election itself
+      await tx
+        .delete(elections)
+        .where(eq(elections.id, id))
+
+      return { success: true }
+    })
   }
 }
 
