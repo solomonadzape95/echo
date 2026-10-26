@@ -1,24 +1,39 @@
-import { eq, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { db, generateReceiptCode } from '../db/db'
 import { votes } from '../models/vote.schema'
 import { elections } from '../models/election.schema'
 import { tokens } from '../models/token.schema'
 import { receipts } from '../models/receipt.schema'
+import { issuances } from '../models/issuance.schema'
+import { ledgerAnchors } from '../models/ledgerAnchor.schema'
 import type { CreateVoteInput } from '../validators/vote.validator'
 import { GENESIS_HASH } from '../validators/vote.validator'
 import { voteEncryptionService } from './voteEncryption.service'
+import { blindSignatureService } from './blindSignature.service'
+import { raKeyService } from './raKey.service'
 import { checkEligibilityByDomain } from '../helpers/eligibility.helpers'
+import { decodeBytes, verifySignature } from '../vendor/blindvote-shared'
 import crypto from 'crypto'
+
+const sha256 = (data: string | Buffer) => crypto.createHash('sha256').update(data).digest('hex')
+
+// Constant hash used for abstentions (empty ballot). It contains no voter data.
+const ABSTENTION_HASH = sha256('abstention')
 
 export class VoteService {
   /**
-   * Create a new vote atomically (handles genesis vote automatically)
-   * This is an atomic transaction that:
-   * 1. Verifies eligibility (issuance exists)
-   * 2. Verifies token (valid, unused, belongs to election)
-   * 3. Creates vote with voteDataHash
-   * 4. Marks token as used
-   * 5. Creates receipt with short code
+   * Create a new vote atomically (handles genesis vote automatically).
+   *
+   * Security properties:
+   * - Eligibility and token validity are checked inside a transaction.
+   * - The ballot is encrypted server-side (AES-256-GCM) and only the ciphertext
+   *   is persisted. The stored `voteDataHash` is a hash of the CIPHERTEXT, so it
+   *   leaks nothing about the ballot (the old design hashed the plaintext, which
+   *   is brute-forceable for a small candidate space).
+   * - `prevHash` and `currentHash` are computed SERVER-SIDE. The client's values
+   *   are ignored, so a malicious client cannot forge a chain link.
+   * - Each link is signed with the server RSA key, so recomputing the chain is
+   *   not enough to tamper with it.
    */
   async create(input: CreateVoteInput, voterId: string) {
     return await db.transaction(async (tx) => {
@@ -35,88 +50,116 @@ export class VoteService {
 
       // 2. Verify eligibility by domain matching (class/department/faculty)
       const eligibility = await checkEligibilityByDomain(voterId, input.election)
-      
+
       if (!eligibility.eligible) {
-        throw new Error(`Voter is not eligible to vote in this election: ${eligibility.reason || 'Domain mismatch'}`)
+        throw new Error(
+          `Voter is not eligible to vote in this election: ${eligibility.reason || 'Domain mismatch'}`
+        )
       }
 
-      // 3. Verify token exists and is not used
-      const [token] = await tx
+      // 3. Ensure an issuance marker exists and the voter has not already voted.
+      //    The marker stores voter+election only - it is NOT linked to the token
+      //    or the vote, so it cannot be used to de-anonymise a ballot.
+      // Lock the issuance row before checking votedAt. Without this lock two
+      // concurrent requests from the same voter can both read votedAt = NULL
+      // and append two ballots (different tokens would still both pass the
+      // token-hash check). The lock serialises the check-and-consume step per
+      // voter while keeping the vote row itself anonymous.
+      const [issuance] = await tx
         .select()
-        .from(tokens)
-        .where(eq(tokens.tokenHash, input.tokenId))
+        .from(issuances)
+        .where(and(eq(issuances.voterId, voterId), eq(issuances.election, input.election)))
+        .for('update')
         .limit(1)
 
-      if (!token) {
-        throw new Error('Token not found')
+      if (!issuance) {
+        throw new Error('No voting token has been issued to you for this election')
+      }
+      if (issuance.votedAt) {
+        throw new Error('You have already voted in this election')
       }
 
-      if (token.usedAt) {
-        throw new Error('Token has already been used')
+      // 4. Verify the RA blind signature. The Ballot Box checks s^e = m against
+      //    the RA public key without needing to know who requested the signature.
+      const { publicKey } = await raKeyService.getActiveKey()
+      const preparedBytes = decodeBytes(input.prepared)
+      const signatureValid = await verifySignature(
+        publicKey,
+        decodeBytes(input.signature),
+        preparedBytes
+      )
+      if (!signatureValid) {
+        throw new Error('Invalid token signature')
       }
 
-      // 4. Verify token belongs to the election
-      if (token.election !== input.election) {
-        throw new Error('Token does not belong to this election')
-      }
+      // 5. Consume the token. `sha256(prepared)` is an anonymous nullifier: it
+      //    proves single use without linking to a voter identity.
+      const tokenHash = sha256(Buffer.from(preparedBytes))
+      const [existingToken] = await tx
+        .select()
+        .from(tokens)
+        .where(eq(tokens.tokenHash, tokenHash))
+        .limit(1)
 
-      // 5. Determine prevHash: check if this is the genesis vote (first vote for this election)
-      // Use SELECT FOR UPDATE to lock rows and prevent race conditions when multiple votes are created simultaneously
-      let prevHash: string
-
-      if (input.prevHash) {
-        // If prevHash is provided, validate it matches the last vote
-        const lastVote = await this.getLastVoteForElectionInTx(tx, input.election)
-        if (lastVote && lastVote.currentHash !== input.prevHash) {
-          throw new Error('Previous hash does not match the last vote in the chain')
+      if (existingToken) {
+        if (existingToken.usedAt) {
+          throw new Error('Token has already been used')
         }
-        prevHash = input.prevHash
+        if (existingToken.election !== input.election) {
+          throw new Error('Token does not belong to this election')
+        }
+        await tx
+          .update(tokens)
+          .set({ usedAt: new Date() })
+          .where(eq(tokens.id, existingToken.id))
       } else {
-        // Auto-determine: get the last vote with lock to prevent race conditions
-        // Lock all votes for this election to prevent concurrent inserts
-        const lastVote = await this.getLastVoteForElectionInTxWithLock(tx, input.election)
-        
-        if (!lastVote) {
-          // No votes exist yet - this should be the genesis vote
-          // Double-check after lock to ensure no vote was created between check and lock
-          const doubleCheck = await this.getLastVoteForElectionInTx(tx, input.election)
-          if (!doubleCheck) {
-            prevHash = GENESIS_HASH
-          } else {
-            // A vote was created between our checks, use its currentHash
-            prevHash = doubleCheck.currentHash
+        try {
+          await tx.insert(tokens).values({
+            election: input.election,
+            tokenHash,
+            usedAt: new Date(),
+          })
+        } catch (error: any) {
+          // Concurrent replay of the same token: the unique index is the
+          // final arbiter, not the earlier SELECT.
+          const code = error?.code || error?.cause?.code
+          if (code === '23505') {
+            throw new Error('Token has already been used')
           }
-        } else {
-          // Use the last vote's currentHash as prevHash
-          prevHash = lastVote.currentHash
+          throw error
         }
       }
 
-      // 6. Encrypt vote data if provided, otherwise use voteDataHash
+      // 6. Determine prevHash SERVER-SIDE. Lock the last row so concurrent
+      //    votes cannot build divergent chains.
+      const lastVote = await this.getLastVoteForElectionInTxWithLock(tx, input.election)
+      const prevHash = lastVote ? lastVote.currentHash : GENESIS_HASH
+
+      // 5. Encrypt the ballot server-side. Only ciphertext is stored.
       let encryptedVoteData: string | null = null
-      
-      if (input.voteData) {
-        // Encrypt the vote data (candidate selections)
+      if (input.voteData && Object.keys(input.voteData).length > 0) {
         encryptedVoteData = voteEncryptionService.encryptVoteData(input.voteData)
-        
-        // Verify the hash matches (client should send the hash of the vote data)
-        const voteDataString = JSON.stringify(input.voteData)
-        const computedHash = crypto.createHash('sha256').update(voteDataString).digest('hex')
-        
-        if (computedHash !== input.voteDataHash) {
-          throw new Error('Vote data hash does not match the provided vote data')
-        }
       }
 
-      // 7. Create vote with voteDataHash and encrypted vote data
+      // 6. Hash the ciphertext (never the plaintext).
+      const voteDataHash = encryptedVoteData ? sha256(encryptedVoteData) : ABSTENTION_HASH
+
+      // 7. Compute the chain link server-side.
+      const currentHash = sha256(prevHash + voteDataHash)
+
+      // 8. Sign the link for tamper-evidence.
+      const signature = blindSignatureService.signHash(currentHash)
+
+      // 9. Insert the vote
       const [newVote] = await tx
         .insert(votes)
         .values({
           prevHash,
-          currentHash: input.currentHash,
-          voteDataHash: input.voteDataHash, // Hash of ballot data (candidate selection)
-          encryptedVoteData, // Encrypted vote data (if provided)
-          tokenId: input.tokenId,
+          currentHash,
+          voteDataHash,
+          encryptedVoteData,
+          signature,
+          tokenId: tokenHash,
           election: input.election,
         })
         .returning()
@@ -125,18 +168,18 @@ export class VoteService {
         throw new Error('Failed to create vote')
       }
 
-      // 7. Mark token as used
+      // 11. Mark the issuance as voted. This prevents double voting without
+      //     recording which token or vote belonged to this voter.
       await tx
-        .update(tokens)
-        .set({ usedAt: new Date() })
-        .where(eq(tokens.id, token.id))
+        .update(issuances)
+        .set({ votedAt: new Date() })
+        .where(eq(issuances.id, issuance.id))
 
-      // 8. Generate receipt code and create receipt
+      // 11. Generate a unique receipt code and create the receipt
       let receiptCode: string
       let attempts = 0
       const maxAttempts = 10
 
-      // Ensure receipt code is unique
       do {
         receiptCode = generateReceiptCode()
         const [existing] = await tx
@@ -144,10 +187,8 @@ export class VoteService {
           .from(receipts)
           .where(eq(receipts.receiptCode, receiptCode))
           .limit(1)
-        
-        if (!existing) {
-          break
-        }
+
+        if (!existing) break
         attempts++
         if (attempts >= maxAttempts) {
           throw new Error('Failed to generate unique receipt code')
@@ -167,7 +208,9 @@ export class VoteService {
         throw new Error('Failed to create receipt')
       }
 
-      // Return vote and receipt
+      // 12. Anchor the signed chain head for this election
+      await this.upsertAnchor(tx, input.election)
+
       return {
         vote: newVote,
         receipt: newReceipt,
@@ -176,31 +219,54 @@ export class VoteService {
   }
 
   /**
-   * Get the last vote for an election (for chain linking) - transaction version
+   * Upsert the signed head of an election's vote chain.
+   */
+  private async upsertAnchor(tx: any, electionId: string) {
+    const lastVote = await this.getLastVoteForElectionInTx(tx, electionId)
+    if (!lastVote) return
+
+    const countResult = await tx.execute(
+      sql`SELECT count(*)::int AS c FROM votes WHERE election = ${electionId}`
+    )
+    const voteCount = countResult.rows?.[0]?.c ?? 0
+    const headSignature = blindSignatureService.signHash(lastVote.currentHash)
+
+    await tx.execute(sql`
+      INSERT INTO ledger_anchors (election, head_hash, head_signature, vote_count, anchored_at)
+      VALUES (${electionId}, ${lastVote.currentHash}, ${headSignature}, ${voteCount}, now())
+      ON CONFLICT (election) DO UPDATE SET
+        head_hash = EXCLUDED.head_hash,
+        head_signature = EXCLUDED.head_signature,
+        vote_count = EXCLUDED.vote_count,
+        anchored_at = EXCLUDED.anchored_at
+    `)
+  }
+
+  /**
+   * Get the last vote for an election (for chain linking) - transaction version.
+   * Deterministic ordering by created_at then id.
    */
   private async getLastVoteForElectionInTx(tx: any, electionId: string) {
     const [lastVote] = await tx
       .select()
       .from(votes)
       .where(eq(votes.election, electionId))
-      .orderBy(desc(votes.createdAt))
+      .orderBy(desc(votes.createdAt), desc(votes.id))
       .limit(1)
 
     return lastVote || null
   }
 
   /**
-   * Get the last vote for an election with FOR UPDATE lock to prevent race conditions
-   * This ensures only one transaction can read the last vote at a time
+   * Get the last vote for an election with FOR UPDATE lock to prevent race
+   * conditions when multiple votes are created simultaneously.
    */
   private async getLastVoteForElectionInTxWithLock(tx: any, electionId: string) {
-    // Use raw SQL with FOR UPDATE to lock the row
-    // This prevents race conditions when multiple votes are created simultaneously
     const result = await tx.execute(sql`
-      SELECT id, prev_hash, current_hash, vote_data_hash, encrypted_vote_data, token_id, election, created_at, updated_at
+      SELECT id, prev_hash, current_hash, vote_data_hash, encrypted_vote_data, signature, token_id, election, created_at, updated_at
       FROM votes
       WHERE election = ${electionId}
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT 1
       FOR UPDATE
     `)
@@ -213,6 +279,7 @@ export class VoteService {
         currentHash: row.current_hash,
         voteDataHash: row.vote_data_hash,
         encryptedVoteData: row.encrypted_vote_data,
+        signature: row.signature,
         tokenId: row.token_id,
         election: row.election,
         createdAt: row.created_at,
@@ -221,20 +288,6 @@ export class VoteService {
     }
 
     return null
-  }
-
-  /**
-   * Get the last vote for an election (for chain linking) - non-transaction version
-   */
-  private async getLastVoteForElection(electionId: string) {
-    const [lastVote] = await db
-      .select()
-      .from(votes)
-      .where(eq(votes.election, electionId))
-      .orderBy(desc(votes.createdAt))
-      .limit(1)
-
-    return lastVote || null
   }
 
   /**
@@ -248,11 +301,7 @@ export class VoteService {
    * Get vote by ID
    */
   async getById(id: string) {
-    const [vote] = await db
-      .select()
-      .from(votes)
-      .where(eq(votes.id, id))
-      .limit(1)
+    const [vote] = await db.select().from(votes).where(eq(votes.id, id)).limit(1)
 
     if (!vote) {
       throw new Error('Vote not found')
@@ -262,45 +311,81 @@ export class VoteService {
   }
 
   /**
-   * Get votes by election
+   * Get votes by election (newest first)
    */
   async getByElection(electionId: string) {
     return await db
       .select()
       .from(votes)
       .where(eq(votes.election, electionId))
-      .orderBy(desc(votes.createdAt))
+      .orderBy(desc(votes.createdAt), desc(votes.id))
   }
 
   /**
    * Get votes by token
    */
   async getByToken(tokenId: string) {
-    return await db
-      .select()
-      .from(votes)
-      .where(eq(votes.tokenId, tokenId))
+    return await db.select().from(votes).where(eq(votes.tokenId, tokenId))
   }
 
   /**
-   * Verify vote chain integrity for an election
+   * Whether a voter is eligible for an election and whether they have voted.
+   * Used by the clients to show the correct call-to-action.
+   */
+  async getVoterStatus(voterId: string, electionId: string) {
+    const [election] = await db
+      .select()
+      .from(elections)
+      .where(eq(elections.id, electionId))
+      .limit(1)
+
+    if (!election) {
+      throw new Error('Election not found')
+    }
+
+    const eligibility = await checkEligibilityByDomain(voterId, electionId)
+
+    const [issuance] = await db
+      .select()
+      .from(issuances)
+      .where(and(eq(issuances.voterId, voterId), eq(issuances.election, electionId)))
+      .limit(1)
+
+    return {
+      eligible: eligibility.eligible,
+      hasVoted: !!issuance?.votedAt,
+    }
+  }
+
+  /**
+   * Verify vote chain integrity for an election.
+   *
+   * Checks, for every link:
+   * - the stored ciphertext hash matches `voteDataHash` (payload integrity);
+   * - `currentHash == sha256(prevHash + voteDataHash)` (chain integrity);
+   * - `prevHash` matches the previous vote's `currentHash` (linkage);
+   * - the link carries a valid RSA signature (tamper-evidence);
+   * - the signed anchor head matches the actual chain head.
    */
   async verifyChain(electionId: string) {
     const electionVotes = await this.getByElection(electionId)
-    
+
     if (electionVotes.length === 0) {
-      return { valid: true, message: 'No votes to verify' }
+      return { valid: true, message: 'No votes to verify', voteCount: 0 }
     }
 
-    // getByElection returns votes in descending order (newest first)
-    // Reverse to get chronological order (oldest first) for chain verification
-    const votesInOrder = [...electionVotes].reverse()
+    // Deterministic chronological order (oldest first)
+    const votesInOrder = [...electionVotes].sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime()
+      const tb = new Date(b.createdAt).getTime()
+      if (ta !== tb) return ta - tb
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    })
 
-    // Check if first vote has genesis hash
-    const firstVote = votesInOrder[0] // First vote (oldest)
+    const firstVote = votesInOrder[0]!
     if (firstVote.prevHash !== GENESIS_HASH) {
-      return { 
-        valid: false, 
+      return {
+        valid: false,
         message: 'First vote does not have genesis hash',
         voteId: firstVote.id,
         expectedPrevHash: GENESIS_HASH,
@@ -308,26 +393,89 @@ export class VoteService {
       }
     }
 
-    // Verify chain links (going forward in time)
-    for (let i = 1; i < votesInOrder.length; i++) {
-      const currentVote = votesInOrder[i] // Current vote (newer)
-      const previousVote = votesInOrder[i - 1] // Previous vote (older)
-      
-      // Current vote's prevHash should match previous vote's currentHash
-      if (currentVote.prevHash !== previousVote.currentHash) {
+    for (let i = 0; i < votesInOrder.length; i++) {
+      const vote = votesInOrder[i]!
+
+      // Payload integrity: the stored hash must match the stored ciphertext
+      const expectedDataHash = vote.encryptedVoteData
+        ? sha256(vote.encryptedVoteData)
+        : ABSTENTION_HASH
+
+      if (vote.voteDataHash !== expectedDataHash) {
         return {
           valid: false,
-          message: 'Vote chain broken',
-          voteId: currentVote.id,
-          expectedPrevHash: previousVote.currentHash,
-          actualPrevHash: currentVote.prevHash,
+          message: 'Vote data hash mismatch (payload altered)',
+          voteId: vote.id,
+        }
+      }
+
+      // Chain integrity: recompute the link server-side
+      const expectedCurrentHash = sha256(vote.prevHash + vote.voteDataHash)
+      if (vote.currentHash !== expectedCurrentHash) {
+        return {
+          valid: false,
+          message: 'Vote hash mismatch (chain link altered)',
+          voteId: vote.id,
+          expectedCurrentHash,
+          actualCurrentHash: vote.currentHash,
+        }
+      }
+
+      // Linkage to the previous vote
+      if (i > 0) {
+        const previousVote = votesInOrder[i - 1]!
+        if (vote.prevHash !== previousVote.currentHash) {
+          return {
+            valid: false,
+            message: 'Vote chain broken',
+            voteId: vote.id,
+            expectedPrevHash: previousVote.currentHash,
+            actualPrevHash: vote.prevHash,
+          }
+        }
+      }
+
+      // Tamper-evidence: signature over the link
+      if (!vote.signature || !blindSignatureService.verifyHash(vote.currentHash, vote.signature)) {
+        return {
+          valid: false,
+          message: 'Invalid or missing vote signature',
+          voteId: vote.id,
         }
       }
     }
 
-    return { valid: true, message: 'Vote chain is valid', voteCount: electionVotes.length }
+    // Anchor check
+    const headVote = votesInOrder[votesInOrder.length - 1]!
+    const [anchor] = await db
+      .select()
+      .from(ledgerAnchors)
+      .where(eq(ledgerAnchors.election, electionId))
+      .limit(1)
+
+    let anchored = false
+    if (anchor) {
+      anchored =
+        anchor.headHash === headVote.currentHash &&
+        blindSignatureService.verifyHash(anchor.headHash, anchor.headSignature)
+
+      if (!anchored) {
+        return {
+          valid: false,
+          message: 'Ledger anchor does not match the chain head',
+          voteId: headVote.id,
+        }
+      }
+    }
+
+    return {
+      valid: true,
+      message: 'Vote chain is valid, signed and anchored',
+      voteCount: electionVotes.length,
+      headHash: headVote.currentHash,
+      anchored,
+    }
   }
 }
 
 export const voteService = new VoteService()
-

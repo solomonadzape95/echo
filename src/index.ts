@@ -22,51 +22,55 @@ import stats from './routes/stats'
 import enumRoute from './routes/enum'
 import officeTemplate from './routes/office-template'
 import storage, { adminStorage } from './routes/storage'
+import ra from './routes/ra'
 
 const app = new Hono()
+
+// Browser origins allowed to call the API. `FRONTEND_URL` is the production
+// web client; `CORS_ORIGINS` is an optional comma-separated extra list.
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS?.split(',') ?? []),
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+]
+  .map((origin) => origin?.trim().replace(/\/$/, ''))
+  .filter((origin): origin is string => !!origin)
 
 // Configure CORS
 app.use('*', cors({
   origin: (origin) => {
-    // Allow requests from frontend dev server
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      // Production frontend origins
-      'https://echo-jet-alpha.vercel.app',
-      'https://echo-jet-alpha.vercel.app/',
-      // Add more Vercel preview URLs if needed (they use wildcard domains)
-      // For now, allow all Vercel preview deployments
-      ...(process.env.NODE_ENV === 'production' 
-        ? [] 
-        : ['http://localhost:3000', 'http://127.0.0.1:3000']
-      ),
-    ]
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Native apps and curl do not send an Origin header.
     if (!origin) return '*'
-    
-    // Check if origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
+
+    const normalized = origin.replace(/\/$/, '')
+    if (configuredOrigins.includes(normalized)) {
       return origin
     }
-    
-    // In production, allow Vercel preview deployments (they use *.vercel.app)
-    if (process.env.NODE_ENV === 'production' && origin.includes('.vercel.app')) {
+
+    // Vercel preview deployments use wildcard subdomains.
+    if (process.env.NODE_ENV === 'production' && normalized.endsWith('.vercel.app')) {
       return origin
     }
-    
-    // Default: allow all origins in development
-    // In production, only allow Vercel domains
-    return process.env.NODE_ENV === 'production' 
-      ? (origin.includes('.vercel.app') ? origin : undefined)
-      : origin
+
+    // Development: allow the local tools.
+    if (process.env.NODE_ENV !== 'production') {
+      return origin
+    }
+
+    return undefined
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  exposeHeaders: ['Content-Length'],
-  credentials: true, // Allow cookies to be sent (required for cross-site cookies)
-  maxAge: 86400, // 24 hours
+  allowHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Client-Platform',
+    'X-Device-Id',
+    'X-Device-Platform',
+  ],
+  exposeHeaders: ['Content-Length', 'Retry-After'],
+  credentials: true,
+  maxAge: 86400,
 }))
 
 // Add request logging middleware (must be before routes)
@@ -164,6 +168,7 @@ app.route('/enum', enumRoute)
 app.route('/office-templates', officeTemplate)
 app.route('/storage', storage)
 app.route('/admin/storage', adminStorage)
+app.route('/ra', ra)
 
 // For Bun's --hot flag, export server config instead of calling Bun.serve()
 // This allows hot reloading to work properly

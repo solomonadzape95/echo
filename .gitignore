@@ -11,3 +11,11 @@ docs/
 dist/
 
 .DS_Store
+# Compiled output accidentally emitted next to the TypeScript sources
+src/**/*.js
+drizzle.config.js
+
+tools/output/
+
+# Compiled test output
+test/**/*.js

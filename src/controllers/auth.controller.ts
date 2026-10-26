@@ -3,6 +3,59 @@ import { authService } from '../services/auth.service'
 import { loginSchema, registerSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } from '../validators/auth.validator'
 import { setAccessTokenCookie, setRefreshTokenCookie, clearTokenCookies, getRefreshTokenFromCookie } from '../helpers/cookie.helpers'
 import { refreshTokenService } from '../services/refreshToken.service'
+import { DeviceBindingError, type DeviceContext } from '../services/deviceBinding.service'
+
+/**
+ * Native clients (React Native) have no cookie jar, so they ask for the tokens
+ * in the response body and send them back as `Authorization: Bearer ...`.
+ * Web clients keep using HttpOnly cookies and never receive tokens in JSON.
+ */
+const isNativeClient = (c: Context) => c.req.header('x-client-platform') === 'native'
+
+/** Read the stable device id/header pair sent by native clients. */
+function deviceFromRequest(c: Context): { native: boolean; device?: DeviceContext; missing: boolean } {
+  const native = isNativeClient(c)
+  const id = c.req.header('x-device-id')?.trim()
+  const platform = c.req.header('x-device-platform')?.trim() || 'unknown'
+
+  if (!native) {
+    return { native, missing: false }
+  }
+  if (!id) {
+    return { native, missing: true }
+  }
+  return { native, device: { id, platform }, missing: false }
+}
+
+/** Map service errors to the right HTTP status without leaking internals. */
+function authError(c: Context, error: any) {
+  if (error.name === 'ZodError') {
+    return c.json({
+      success: false,
+      message: 'Validation error',
+      errors: error.errors,
+    }, 400)
+  }
+
+  if (error instanceof DeviceBindingError) {
+    return c.json({
+      success: false,
+      message: error.message,
+      code: 'DEVICE_BINDING',
+    }, error.status)
+  }
+
+  return c.json({
+    success: false,
+    message: error.message || 'Login failed',
+  }, 401)
+}
+
+const missingDeviceResponse = (c: Context) => c.json({
+  success: false,
+  message: 'This build of the app did not send a device identifier. Update the app to sign in.',
+  code: 'DEVICE_ID_REQUIRED',
+}, 400)
 
 export class AuthController {
   /**
@@ -14,8 +67,13 @@ export class AuthController {
       const body = await c.req.json()
       const validatedData = loginSchema.parse(body)
 
+      const device = deviceFromRequest(c)
+      if (device.missing) {
+        return missingDeviceResponse(c)
+      }
+
       // Call service (returns { user, accessToken, refreshToken, isAdmin, admin? })
-      const result = await authService.login(validatedData)
+      const result = await authService.login(validatedData, device.device)
       const { user, accessToken, refreshToken } = result
 
       // Set tokens in secure cookies
@@ -35,26 +93,19 @@ export class AuthController {
         responseData.isAdmin = false
       }
 
+      // Native clients need the tokens in the body (no cookie jar).
+      if (isNativeClient(c)) {
+        responseData.accessToken = accessToken
+        responseData.refreshToken = refreshToken
+      }
+
       return c.json({
         success: true,
         data: responseData,
         message: 'Login successful',
       }, 200)
     } catch (error: any) {
-      // Handle validation errors
-      if (error.name === 'ZodError') {
-        return c.json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors,
-        }, 400)
-      }
-
-      // Handle business logic errors
-      return c.json({
-        success: false,
-        message: error.message || 'Login failed',
-      }, 401)
+      return authError(c, error)
     }
   }
 
@@ -67,8 +118,13 @@ export class AuthController {
       const body = await c.req.json()
       const validatedData = registerSchema.parse(body)
 
+      const device = deviceFromRequest(c)
+      if (device.missing) {
+        return missingDeviceResponse(c)
+      }
+
       // Call service (returns { user, accessToken, refreshToken })
-      const { user, accessToken, refreshToken } = await authService.register(validatedData)
+      const { user, accessToken, refreshToken } = await authService.register(validatedData, device.device)
 
       // Set tokens in secure cookies
       setAccessTokenCookie(c, accessToken)
@@ -79,17 +135,13 @@ export class AuthController {
         success: true,
         data: {
           user,
+          ...(isNativeClient(c) ? { accessToken, refreshToken } : {}),
         },
         message: 'Registration successful',
       }, 201)
     } catch (error: any) {
-      // Handle validation errors
-      if (error.name === 'ZodError') {
-        return c.json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors,
-        }, 400)
+      if (error.name === 'ZodError' || error instanceof DeviceBindingError) {
+        return authError(c, error)
       }
 
       // Handle business logic errors
@@ -219,8 +271,10 @@ export class AuthController {
    */
   async refresh(c: Context) {
     try {
-      // Get refresh token from cookie
-      const refreshToken = getRefreshTokenFromCookie(c)
+      // Web: refresh token comes from the HttpOnly cookie.
+      // Native: it is sent in the body because RN has no cookie jar.
+      const body = await c.req.json().catch(() => ({}) as any)
+      const refreshToken = getRefreshTokenFromCookie(c) || body?.refreshToken
 
       if (!refreshToken) {
         return c.json({
@@ -244,6 +298,10 @@ export class AuthController {
       } else if (result.user) {
         responseData.user = result.user
         responseData.isAdmin = false
+      }
+
+      if (isNativeClient(c)) {
+        responseData.accessToken = accessToken
       }
 
       return c.json({

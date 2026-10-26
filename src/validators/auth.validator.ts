@@ -8,11 +8,15 @@ export const loginSchema = z.object({
 })
 
 // Register validation schema
+// The mobile registration flow sends only the reg number, password and an
+// optional claim code. `username`/`classId` stay optional for older clients;
+// the server always derives both from the masterlist so they cannot be spoofed.
 export const registerSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
+  username: z.union([z.string().min(1), z.literal('')]).optional(),
   regNumber: z.string().min(1, 'Registration number is required'),
-  classId: z.string().uuid('Invalid class ID'),
+  classId: z.union([z.string().uuid('Invalid class ID'), z.literal('')]).optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+  claimCode: z.string().max(64).optional(),
 })
 
 // Forgot password validation schema

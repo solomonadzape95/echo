@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, sql, or } from 'drizzle-orm'
+import { eq, and, gte, lte, sql, or, isNotNull } from 'drizzle-orm'
 import { db } from '../db/db'
 import { voters } from '../models/voter.schema'
 import { admins } from '../models/admin.schema'
@@ -106,33 +106,25 @@ export class DashboardService {
       .limit(1)
 
     // 4. Get stats
-    // - Total elections the voter is eligible for (issuances count)
-    const [issuancesCount] = await db
+    // - Elections the voter has voted in.
+    // The issuance marker records voter + election + votedAt only; it carries
+    // no token or vote reference, so this does not de-anonymise any ballot.
+    const [votedCount] = await db
       .select({ count: sql<number>`count(*)` })
       .from(issuances)
-      .where(eq(issuances.voterId, voterId))
+      .where(and(eq(issuances.voterId, voterId), isNotNull(issuances.votedAt)))
 
-    // - Elections the voter has voted in
-    // Count distinct elections where the voter has cast a vote
-    // Join issuances -> tokens -> votes to find elections with votes
-    const votesData = await db
-      .select({
-        electionId: votes.election,
-      })
-      .from(issuances)
-      .innerJoin(tokens, eq(issuances.tokenHash, tokens.tokenHash)) // Now join directly on tokenHash
-      .innerJoin(votes, eq(tokens.tokenHash, votes.tokenId))
-      .where(eq(issuances.voterId, voterId))
+    const electionsVotedIn = Number(votedCount?.count ?? 0)
 
-    // Get distinct election IDs
-    const uniqueElectionIds = new Set(votesData.map(v => v.electionId))
-    const electionsVotedIn = uniqueElectionIds.size
-
-    // - Total eligible elections count (filtered by domain)
-    const [totalElections] = await db
+    // - Eligible elections (domain-filtered) and total elections
+    const [eligibleCount] = await db
       .select({ count: sql<number>`count(*)` })
       .from(elections)
       .where(domainFilter)
+
+    const [totalCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(elections)
 
     return {
       profile: {
@@ -170,8 +162,8 @@ export class DashboardService {
         status: upcomingElection.status,
       } : null,
       stats: {
-        totalElections: Number(totalElections?.count || 0),
-        eligibleElections: Number(issuancesCount?.count || 0),
+        totalElections: Number(totalCount?.count || 0),
+        eligibleElections: Number(eligibleCount?.count || 0),
         electionsVotedIn,
         votesCast: electionsVotedIn, // Number of elections voted in
       },

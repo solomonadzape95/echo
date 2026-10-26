@@ -87,17 +87,24 @@ export class VerifyEligibilityController {
       const body = await c.req.json()
       const validatedData = signBlindedTokenSchema.parse(body)
 
-      // Verify that the user has a token for this election
-      const token = await verifyEligibilityService.getTokenForVoter(
+      // Verify that the user has been issued eligibility for this election
+      const issuance = await verifyEligibilityService.getIssuance(
         user.id,
         validatedData.election
       )
 
-      if (!token) {
+      if (!issuance) {
         return c.json({
           success: false,
           message: 'No token found for this voter and election. Please verify eligibility first.',
         }, 404)
+      }
+
+      if (issuance.votedAt) {
+        return c.json({
+          success: false,
+          message: 'You have already voted in this election',
+        }, 400)
       }
 
       // Sign the blinded token
@@ -109,7 +116,6 @@ export class VerifyEligibilityController {
         success: true,
         data: {
           signature,
-          tokenHash: token.tokenHash,
         },
         message: 'Blinded token signed successfully. Unblind the signature on the client side.',
       }, 200)

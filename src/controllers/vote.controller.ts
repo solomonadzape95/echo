@@ -2,6 +2,23 @@ import { Context } from 'hono'
 import { voteService } from '../services/vote.service'
 import { createVoteSchema, voteIdSchema } from '../validators/vote.validator'
 
+/**
+ * Public-safe projection of a vote. Deliberately omits `tokenId`,
+ * `encryptedVoteData`, `voteDataHash` and `signature` so that the public /
+ * authenticated chain-linking endpoint cannot be used to read ballots or
+ * correlate tokens.
+ */
+function toSafeVote(vote: any) {
+  return {
+    id: vote.id,
+    prevHash: vote.prevHash,
+    currentHash: vote.currentHash,
+    election: vote.election,
+    createdAt: vote.createdAt,
+    updatedAt: vote.updatedAt,
+  }
+}
+
 export class VoteController {
   /**
    * Create a new vote atomically (handles genesis vote automatically)
@@ -108,6 +125,30 @@ export class VoteController {
   }
 
   /**
+   * GET /vote/status?electionId=xxx
+   * Authenticated. Returns { eligible, hasVoted } for the current voter.
+   */
+  async getStatus(c: Context) {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        return c.json({ success: false, message: 'Unauthorized' }, 401)
+      }
+      const electionId = c.req.query('electionId')
+      if (!electionId) {
+        return c.json({ success: false, message: 'electionId query parameter is required' }, 400)
+      }
+      const data = await voteService.getVoterStatus(user.id, electionId)
+      return c.json({ success: true, data }, 200)
+    } catch (error: any) {
+      return c.json(
+        { success: false, message: error.message || 'Failed to fetch vote status' },
+        400
+      )
+    }
+  }
+
+  /**
    * Get votes by election
    */
   async getByElection(c: Context) {
@@ -125,7 +166,7 @@ export class VoteController {
 
       return c.json({
         success: true,
-        data: votes,
+        data: votes.map(toSafeVote),
       }, 200)
     } catch (error: any) {
       return c.json({

@@ -2,6 +2,7 @@ import { eq, and } from 'drizzle-orm'
 import { db } from '../db/db'
 import { masterlist } from '../models/masterlist.schema'
 import { classes } from '../models/class.schema'
+import { voters } from '../models/voter.schema'
 
 interface StudentInput {
   name: string
@@ -185,8 +186,6 @@ export class MasterlistService {
    */
   async getByRegNoWithRelations(regNo: string) {
     try {
-      console.log('[MASTERLIST SERVICE] getByRegNoWithRelations called with regNo:', regNo)
-      
       const [result] = await db
         .select({
           // Masterlist fields
@@ -195,8 +194,11 @@ export class MasterlistService {
           name: masterlist.name,
           classId: masterlist.class,
           activated: masterlist.activated,
+          registrationCodeHash: masterlist.registrationCodeHash,
           createdAt: masterlist.createdAt,
           updatedAt: masterlist.updatedAt,
+          // Existing account (identity check for the registration flow)
+          voterId: voters.id,
           // Class fields
           classLevel: classes.level,
           classId_full: classes.id,
@@ -206,13 +208,11 @@ export class MasterlistService {
         })
         .from(masterlist)
         .leftJoin(classes, eq(masterlist.class, classes.id))
+        .leftJoin(voters, eq(voters.regNumber, masterlist.regNo))
         .where(eq(masterlist.regNo, regNo))
         .limit(1)
 
-      console.log('[MASTERLIST SERVICE] Query result:', result ? 'Found' : 'Not found')
-
       if (!result) {
-        console.log('[MASTERLIST SERVICE] No record found for regNo:', regNo)
         return null
       }
 
@@ -228,6 +228,8 @@ export class MasterlistService {
         lastName,
         classId: result.classId,
         activated: result.activated,
+        hasAccount: !!result.voterId,
+        claimRequired: !!result.registrationCodeHash,
         class: result.classId_full ? {
           id: result.classId_full,
           name: result.classLevel,
@@ -238,11 +240,8 @@ export class MasterlistService {
         updatedAt: result.updatedAt,
       }
 
-      console.log('[MASTERLIST SERVICE] Transformed record:', JSON.stringify(transformed, null, 2))
       return transformed
     } catch (error: any) {
-      console.error('[MASTERLIST SERVICE] Error in getByRegNoWithRelations:', error)
-      console.error('[MASTERLIST SERVICE] Error stack:', error.stack)
       throw error
     }
   }

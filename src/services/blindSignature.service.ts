@@ -2,6 +2,15 @@ import * as crypto from 'crypto'
 import { modPow, randBetween } from 'bigint-crypto-utils'
 
 /**
+ * Normalize a PEM key that may have been stored in a .env file with escaped
+ * newlines (e.g. "-----BEGIN...\nMIIE...\n-----END..."). Bun's .env loader does
+ * not interpret \n escapes inside quoted values, so we decode them here.
+ */
+function normalizePem(pem: string | undefined): string | undefined {
+  return pem?.includes('\\n') ? pem.replace(/\\n/g, '\n') : pem
+}
+
+/**
  * RSA Blind Signature Service (Chaum Blind Signature Scheme)
  * 
  * This service implements proper RSA blind signatures using Chaum's scheme.
@@ -22,11 +31,12 @@ export class BlindSignatureService {
   private privateKey: crypto.KeyObject
   private publicKey: crypto.KeyObject
   private publicExponent: bigint = BigInt(65537) // Default RSA public exponent
+  private modulus: bigint | null = null
 
   constructor() {
     // Load or generate RSA key pair
-    const privateKeyPem = process.env.RSA_PRIVATE_KEY
-    const publicKeyPem = process.env.RSA_PUBLIC_KEY
+    const privateKeyPem = normalizePem(process.env.RSA_PRIVATE_KEY)
+    const publicKeyPem = normalizePem(process.env.RSA_PUBLIC_KEY)
 
     if (!privateKeyPem || !publicKeyPem) {
       // Generate new key pair if not provided (for development)
@@ -60,16 +70,19 @@ export class BlindSignatureService {
    * Extract RSA parameters (n, e, d) from the key pair
    */
   private extractRSAParameters() {
-    // Get public key details
-    const publicKeyDetails = this.publicKey.asymmetricKeyDetails!
-    const exponent = publicKeyDetails.publicExponent || 65537
-    this.publicExponent = BigInt(exponent)
-    
-    // Note: Node.js crypto doesn't directly expose modulus (n) and private exponent (d)
-    // For proper implementation, you might want to use a library like 'node-forge'
-    // that can extract these values from PEM keys, or store them separately.
-    // For now, we'll use the key objects for signing and let the client handle blinding/unblinding
-    // The client will need the public key PEM to extract the modulus
+    // Export the public key as JWK to obtain the real RSA modulus (n) and
+    // public exponent (e). Node's asymmetricKeyDetails only exposes e.
+    const jwk = this.publicKey.export({ format: 'jwk' }) as { n?: string; e?: string }
+
+    if (jwk.n) {
+      this.modulus = BigInt('0x' + Buffer.from(jwk.n, 'base64url').toString('hex'))
+    }
+    if (jwk.e) {
+      this.publicExponent = BigInt('0x' + Buffer.from(jwk.e, 'base64url').toString('hex'))
+    } else {
+      const exponent = this.publicKey.asymmetricKeyDetails?.publicExponent || 65537
+      this.publicExponent = BigInt(exponent)
+    }
   }
 
   /**
@@ -87,17 +100,13 @@ export class BlindSignatureService {
    * Clients should extract it from the PEM public key using a library like 'node-forge'
    */
   getPublicKeyParameters(): { modulus: string; exponent: string } {
-    // Extract public key components
-    const publicKeyDetails = this.publicKey.asymmetricKeyDetails!
-    const exponent = publicKeyDetails.publicExponent || 65537
-    
-    // For the modulus, we need to extract it from the key
-    // Since Node.js doesn't expose this directly, we'll provide the public key PEM
-    // and let the client extract the modulus using a crypto library
-    
+    if (!this.modulus) {
+      throw new Error('RSA modulus not available')
+    }
+
     return {
-      modulus: 'extract_from_public_key', // Client should extract from PEM using node-forge or similar
-      exponent: exponent.toString(16),
+      modulus: this.modulus.toString(16),
+      exponent: this.publicExponent.toString(16),
     }
   }
 
@@ -154,6 +163,38 @@ export class BlindSignatureService {
           padding: crypto.constants.RSA_PKCS1_PADDING,
         },
         signatureBuffer
+      )
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
+   * Sign a ledger chain link (vote currentHash) with the RSA private key.
+   * This is what makes the hash-chain tamper-evident: recomputing the chain
+   * is not enough, an attacker also needs the private key to forge the link.
+   */
+  signHash(hashHex: string): string {
+    const signature = crypto.sign('RSA-SHA256', Buffer.from(hashHex, 'utf8'), {
+      key: this.privateKey,
+      padding: crypto.constants.RSA_PKCS1_PADDING,
+    })
+    return signature.toString('hex')
+  }
+
+  /**
+   * Verify a ledger chain link signature with the RSA public key.
+   */
+  verifyHash(hashHex: string, signatureHex: string): boolean {
+    try {
+      return crypto.verify(
+        'RSA-SHA256',
+        Buffer.from(hashHex, 'utf8'),
+        {
+          key: this.publicKey,
+          padding: crypto.constants.RSA_PKCS1_PADDING,
+        },
+        Buffer.from(signatureHex, 'hex')
       )
     } catch (error) {
       return false

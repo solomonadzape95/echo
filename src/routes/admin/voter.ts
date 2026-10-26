@@ -6,6 +6,8 @@ import { voters } from '../../models/voter.schema'
 import { classes } from '../../models/class.schema'
 import { elections } from '../../models/election.schema'
 import { masterlist } from '../../models/masterlist.schema'
+import { deviceBindingService } from '../../services/deviceBinding.service'
+import { refreshTokenService } from '../../services/refreshToken.service'
 
 const voter = new Hono()
 
@@ -171,6 +173,54 @@ voter.get('/search', async (c) => {
     return c.json({
       success: false,
       message: error.message || 'Failed to search voters',
+    }, 500)
+  }
+})
+
+// GET /admin/voter/:id/device - Inspect the device lock for a voter
+voter.get('/:id/device', async (c) => {
+  try {
+    const voterId = c.req.param('id')
+    const binding = await deviceBindingService.getForVoter(voterId)
+
+    return c.json({
+      success: true,
+      data: binding
+        ? {
+            bound: true,
+            platform: binding.platform,
+            boundAt: binding.boundAt,
+            lastSeenAt: binding.lastSeenAt,
+          }
+        : { bound: false },
+    }, 200)
+  } catch (error: any) {
+    return c.json({
+      success: false,
+      message: error.message || 'Failed to read device lock',
+    }, 500)
+  }
+})
+
+// DELETE /admin/voter/:id/device - Release a voter's device lock.
+// Also revokes live refresh tokens so the old phone is signed out immediately.
+voter.delete('/:id/device', async (c) => {
+  try {
+    const voterId = c.req.param('id')
+    const removed = await deviceBindingService.reset(voterId)
+    await refreshTokenService.revokeAllTokens(voterId, false)
+
+    return c.json({
+      success: true,
+      message: removed
+        ? 'Device lock reset. The voter can sign in on a new device.'
+        : 'No device lock was set for this voter.',
+      data: { removed },
+    }, 200)
+  } catch (error: any) {
+    return c.json({
+      success: false,
+      message: error.message || 'Failed to reset device lock',
     }, 500)
   }
 })

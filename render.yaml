@@ -1,0 +1,81 @@
+# BlindVote API — Render Blueprint for the `echo` server repo.
+#
+# If your existing Render service is not named `echo-fmir`, change `name` below.
+# Render will apply this configuration to the existing service with that name.
+#
+# First deploy:
+#   1. Set DATABASE_URL to your Render Postgres / Supabase connection string.
+#   2. Set FRONTEND_URL to your deployed web client.
+#   3. After the service is live, initialize the schema once against the DB:
+#        DATABASE_URL="<external connection string>" bun run db:push
+#      (or run `bun run db:push` from the Render Shell)
+#
+# Free web services sleep after inactivity; the first request can take 30–60s.
+
+services:
+  - type: web
+    name: echo-fmir
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Paste the Render Postgres / Supabase connection string in the dashboard.
+      # To let Render create a new database instead, uncomment the `databases`
+      # block at the bottom and replace this with a fromDatabase reference.
+      - key: DATABASE_URL
+        sync: false
+
+      # Generate once and keep stable.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: VOTE_ENCRYPTION_KEY
+        generateValue: true
+      - key: DEVICE_BINDING_PEPPER
+        generateValue: true
+      - key: REGISTRATION_CODE_PEPPER
+        generateValue: true
+
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Optional: email, storage, passkeys.
+      - key: EMAIL_DOMAIN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_ORIGIN
+        sync: false
+      - key: WEBAUTHN_RP_NAME
+        value: BlindVote
+
+      - key: GOVERNANCE_THRESHOLD
+        value: "2"
+      - key: CHAIN_ENABLED
+        value: "false"
+      - key: DATABASE_SSL
+        sync: false
+
+# Uncomment to create a new Render Postgres with this Blueprint:
+#
+# databases:
+#   - name: blindvote-db
+#     plan: free
+#     databaseName: blindvote
+#     user: blindvote

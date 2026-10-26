@@ -148,25 +148,26 @@ export class ResultService {
           }
         }
         
-        const voteData = JSON.parse(decryptedJson) // { officeId: candidateId, ... }
+        // Integrity: `voteDataHash` is the server-computed hash of the stored
+        // CIPHERTEXT, so it can be verified without decrypting. (GCM's auth tag
+        // independently authenticates the decrypted plaintext.)
+        if (isEncrypted) {
+          const ciphertextHash = crypto
+            .createHash('sha256')
+            .update(vote.encryptedVoteData)
+            .digest('hex')
 
-        // Verify integrity: check if hash matches
-        // Note: Hash should be computed from the JSON string exactly as it was when created
-        const computedHash = crypto
-          .createHash('sha256')
-          .update(decryptedJson)
-          .digest('hex')
-
-        if (computedHash !== vote.voteDataHash) {
-          // Vote data has been tampered with!
-          console.warn(`[RESULT SERVICE] Hash mismatch for vote ${vote.id}`)
-          console.warn(`  Expected hash: ${vote.voteDataHash}`)
-          console.warn(`  Computed hash: ${computedHash}`)
-          console.warn(`  Vote data: ${decryptedJson.substring(0, 100)}...`)
-          invalidVotes++
-          invalidVoteIds.push(vote.id)
-          continue
+          if (ciphertextHash !== vote.voteDataHash) {
+            console.warn(`[RESULT SERVICE] Ciphertext hash mismatch for vote ${vote.id}`)
+            console.warn(`  Expected hash: ${vote.voteDataHash}`)
+            console.warn(`  Computed hash: ${ciphertextHash}`)
+            invalidVotes++
+            invalidVoteIds.push(vote.id)
+            continue
+          }
         }
+
+        const voteData = JSON.parse(decryptedJson) // { officeId: candidateId, ... }
 
         // Count votes per office -> candidate
         // Note: A vote is valid if it has valid hash, even if it has no selections (abstention)

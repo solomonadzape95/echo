@@ -18,8 +18,14 @@ const pool = new Pool({
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
   connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
-  // Supabase-specific settings
-  ssl: connectionString.includes('supabase.co') ? { rejectUnauthorized: false } : undefined,
+  // Supabase and some hosted Postgres providers require TLS. Render's internal
+  // URL usually does not, so this is opt-in with DATABASE_SSL=true.
+  ssl:
+    connectionString.includes('supabase.co') ||
+    /sslmode=require/i.test(connectionString) ||
+    process.env.DATABASE_SSL === 'true'
+      ? { rejectUnauthorized: false }
+      : undefined,
 })
 
 // Handle pool errors

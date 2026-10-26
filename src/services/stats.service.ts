@@ -15,7 +15,7 @@ export class StatsService {
    * check if the voter's token has been used.
    */
   async hasVoterVoted(voterId: string, electionId: string): Promise<boolean> {
-    // Get issuance for this voter-election pair
+    // The issuance marker records voter + election + votedAt only.
     const [issuance] = await db
       .select()
       .from(issuances)
@@ -25,23 +25,7 @@ export class StatsService {
       ))
       .limit(1)
 
-    if (!issuance || !issuance.tokenHash) {
-      return false // No issuance or token hash means they haven't been issued a token
-    }
-
-    // Check if the token linked to this issuance has been used
-    const [token] = await db
-      .select()
-      .from(tokens)
-      .where(eq(tokens.tokenHash, issuance.tokenHash))
-      .limit(1)
-
-    if (!token) {
-      return false // Token doesn't exist
-    }
-
-    // Return true if token has been used (voter has voted)
-    return token.usedAt !== null
+    return !!issuance?.votedAt
   }
 
   /**

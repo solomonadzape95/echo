@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm'
+import { eq, and, desc, isNotNull } from 'drizzle-orm'
 import { db } from '../db/db'
 import { voters } from '../models/voter.schema'
 import { classes } from '../models/class.schema'
@@ -40,24 +40,20 @@ export class ProfileService {
       throw new Error('Voter not found')
     }
 
-    // 2. Get voting history
-    // Join issuances -> tokens (via tokenHash) -> votes -> elections to get voting history
+    // 2. Get voting history (which elections the voter has voted in).
+    // The issuance marker records voter + election + votedAt only, so we can
+    // report WHICH elections the voter voted in without linking to a ballot.
     const votingHistory = await db
       .select({
-        voteId: votes.id,
-        electionId: votes.election,
+        electionId: issuances.election,
         electionName: elections.name,
         electionDescription: elections.description,
-        votedAt: votes.createdAt,
-        receiptCode: receipts.receiptCode,
+        votedAt: issuances.votedAt,
       })
       .from(issuances)
-      .innerJoin(tokens, eq(issuances.tokenHash, tokens.tokenHash)) // Now join directly on tokenHash
-      .innerJoin(votes, eq(tokens.tokenHash, votes.tokenId))
-      .innerJoin(elections, eq(votes.election, elections.id))
-      .leftJoin(receipts, eq(votes.id, receipts.voteId))
-      .where(eq(issuances.voterId, voterId))
-      .orderBy(desc(votes.createdAt))
+      .innerJoin(elections, eq(issuances.election, elections.id))
+      .where(and(eq(issuances.voterId, voterId), isNotNull(issuances.votedAt)))
+      .orderBy(desc(issuances.votedAt))
 
     return {
       profile: {
@@ -76,12 +72,12 @@ export class ProfileService {
         isVerified: !!voter.name, // Verified if name exists in masterlist
       },
       votingHistory: votingHistory.map(vote => ({
-        voteId: vote.voteId,
+        voteId: null,
         electionId: vote.electionId,
         electionName: vote.electionName,
         electionDescription: vote.electionDescription,
         votedAt: vote.votedAt,
-        receiptCode: vote.receiptCode,
+        receiptCode: null,
       })),
     }
   }

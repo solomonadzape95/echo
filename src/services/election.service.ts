@@ -274,6 +274,17 @@ export class ElectionService {
       throw new Error('Election not found')
     }
 
+    // An election that has already started cannot be stopped or rescheduled.
+    // Once status is 'active', admins may edit descriptive fields only.
+    if (existing.status === 'active') {
+      if (input.status && input.status !== 'active') {
+        throw new Error('This election has already started and cannot be stopped.')
+      }
+      if (input.startDate || input.endDate) {
+        throw new Error('This election has already started and its schedule cannot be changed.')
+      }
+    }
+
     // Prepare update data
     const updateData: any = {}
     
@@ -346,6 +357,11 @@ export class ElectionService {
 
       if (!existing) {
         throw new Error('Election not found')
+      }
+
+      // An election that has already started cannot be deleted.
+      if (existing.status === 'active') {
+        throw new Error('This election has already started and cannot be deleted.')
       }
 
       // Get all offices for this election (needed for deleting candidates and results)

@@ -11,27 +11,24 @@ import { setCookie, getCookie } from 'hono/cookie'
  * so we always use 'none' with 'secure: true' in production.
  */
 const getCookieOptions = () => {
-  // const isProduction = process.env.NODE_ENV === 'production';
-  
-  // In production, frontend and backend are on different domains (Vercel vs Render)
-  // So we MUST use 'none' with 'secure: true' for cross-site cookies
-  // In development, if same origin, we can use 'lax'
-  const sameSite = 'none' as const ;
-  const partitioned = true;
-  
-  // Secure flag MUST be true when using 'none' (required by browsers)
-  // Also use secure in production for better security
-  const secure = true; // Always use secure in production, and required for 'none'
-  
+  // Production: frontend (Vercel) and backend (Render) are on different sites,
+  // so we need SameSite=None + Secure (+ Partitioned).
+  // Development: everything runs on http://localhost, so Secure/Partitioned
+  // cookies are rejected by browsers. Use SameSite=Lax and no Secure flag.
+  const isProduction = process.env.NODE_ENV === 'production'
+  const sameSite = isProduction ? ('none' as const) : ('lax' as const)
+  const secure = isProduction
+  const partitioned = isProduction
+
   return {
-    httpOnly: true,        // Prevents JavaScript access (XSS protection)
-    secure,                // HTTPS required for 'none', always true
-    sameSite,  
-    partitioned, // 'none' for cross-site (production), 'lax' for same-site (dev)
-    path: '/',            // Available on all paths
+    httpOnly: true, // Prevents JavaScript access (XSS protection)
+    secure, // Required for SameSite=None; off on local HTTP
+    sameSite,
+    partitioned, // CHIPS; only meaningful for cross-site production cookies
+    path: '/', // Available on all paths
     maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
-  };
-};
+  }
+}
 
 const COOKIE_OPTIONS = getCookieOptions();
 

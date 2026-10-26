@@ -89,49 +89,34 @@ export class MasterlistController {
    */
   async verify(c: Context) {
     try {
-      console.log('[MASTERLIST VERIFY] Request received')
       const regNumber = c.req.query('regNumber')
-      console.log('[MASTERLIST VERIFY] regNumber from query:', regNumber)
 
       if (!regNumber) {
-        console.log('[MASTERLIST VERIFY] Missing regNumber parameter')
         return c.json({
           success: false,
           message: 'regNumber query parameter is required',
         }, 400)
       }
 
-      console.log('[MASTERLIST VERIFY] Calling service with regNumber:', regNumber)
       const record = await masterlistService.getByRegNoWithRelations(regNumber)
-      console.log('[MASTERLIST VERIFY] Service returned:', record ? 'Found record' : 'No record found')
 
       if (!record) {
-        console.log('[MASTERLIST VERIFY] Record not found for regNumber:', regNumber)
         return c.json({
           success: false,
           message: 'Registration number not found in masterlist',
         }, 404)
       }
 
-      // Check if account is already activated
-      if (record.activated) {
-        console.log('[MASTERLIST VERIFY] Record found but already activated')
-        return c.json({
-          success: false,
-          message: 'An account already exists for this registration number',
-          data: record, // Still return the data so frontend can show name/class
-          alreadyExists: true,
-        }, 200)
-      }
-
-      console.log('[MASTERLIST VERIFY] Returning success response')
+      // Existing accounts are reported in the payload (not as an HTTP error)
+      // so clients can show the details and a "Go to login" action.
       return c.json({
         success: true,
         data: record,
+        message: record.hasAccount
+          ? 'An account already exists for this registration number'
+          : undefined,
       }, 200)
     } catch (error: any) {
-      console.error('[MASTERLIST VERIFY] Error:', error)
-      console.error('[MASTERLIST VERIFY] Error stack:', error.stack)
       return c.json({
         success: false,
         message: error.message || 'Failed to verify registration number',

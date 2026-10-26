@@ -1,4 +1,5 @@
 import { eq, and, isNull, gt, or } from 'drizzle-orm'
+import { createHmac } from 'node:crypto'
 import { db } from '../db/db'
 import { voters } from '../models/voter.schema'
 import { admins } from '../models/admin.schema'
@@ -10,7 +11,19 @@ import { generateAccessToken } from '../helpers/jwt.helpers'
 import { refreshTokenService } from './refreshToken.service'
 import { passwordResetService } from './passwordReset.service'
 import { emailService } from './email.service'
+import { deviceBindingService, type DeviceContext } from './deviceBinding.service'
 import type { JwtPayload } from '../types/jwt.types'
+
+
+const REGISTRATION_CODE_PEPPER =
+  process.env.REGISTRATION_CODE_PEPPER || 'blindvote-registration-code-v1'
+
+/** Hash a one-time claim code before comparison/storage. */
+export function hashRegistrationCode(code: string): string {
+  return createHmac('sha256', REGISTRATION_CODE_PEPPER)
+    .update(code.trim().toUpperCase())
+    .digest('hex')
+}
 
 
 export class AuthService {
@@ -18,7 +31,7 @@ export class AuthService {
    * Authenticate a user by registration number and password
    * Returns user data and JWT token
    */
-  async login(input: LoginInput) {
+  async login(input: LoginInput, device?: DeviceContext) {
     // Find user by registration number
     const [user] = await db
       .select()
@@ -27,13 +40,20 @@ export class AuthService {
       .limit(1)
 
     if (!user) {
-      throw new Error('Invalid credentials')
+      throw new Error('Registration number or password is incorrect')
     }
 
     // Verify password
     const isValidPassword = await bcrypt.compare(input.password, user.password)
     if (!isValidPassword) {
-      throw new Error('Invalid credentials')
+      throw new Error('Registration number or password is incorrect')
+    }
+
+    // Claim this device for the account (no-op when already claimed).
+    // Native clients always send a device id; the controller rejects requests
+    // without one, so the lock cannot be skipped by simply omitting the header.
+    if (device) {
+      await deviceBindingService.bind(user.id, device.id, device.platform)
     }
 
     // Create JWT payload matching JwtPayload interface
@@ -60,9 +80,32 @@ export class AuthService {
   }
 
   /**
+   * Issue a session (access + refresh token) for an already-authenticated voter.
+   * Used by WebAuthn login, which authenticates without a password.
+   */
+  async issueSession(user: typeof voters.$inferSelect, device?: DeviceContext) {
+    if (device) {
+      await deviceBindingService.bind(user.id, device.id, device.platform)
+    }
+
+    const jwtPayload: JwtPayload = {
+      id: user.id,
+      regNumber: user.regNumber,
+      username: user.username,
+      classId: user.class,
+    }
+
+    const accessToken = await generateAccessToken(jwtPayload)
+    const refreshToken = await refreshTokenService.createRefreshToken(user.id, jwtPayload)
+
+    const { password, ...userWithoutPassword } = user
+    return { user: userWithoutPassword, accessToken, refreshToken }
+  }
+
+  /**
    * Register a new voter
    */
-  async register(input: RegisterInput) {
+  async register(input: RegisterInput, device?: DeviceContext) {
     // Get name from masterlist (username should come from masterlist)
     const [masterlistEntry] = await db
       .select()
@@ -88,6 +131,18 @@ export class AuthService {
       throw new Error('Registration number already exists')
     }
 
+    // Optional one-time claim code. Administrators generate these per student;
+    // once set, knowing a registration number is no longer enough to register.
+    if (masterlistEntry.registrationCodeHash) {
+      const code = input.claimCode?.trim()
+      if (!code) {
+        throw new Error('A registration code is required for this registration number')
+      }
+      if (hashRegistrationCode(code) !== masterlistEntry.registrationCodeHash) {
+        throw new Error('Invalid registration code')
+      }
+    }
+
     // Check if username already exists
     const [existingUsername] = await db
       .select()
@@ -99,6 +154,12 @@ export class AuthService {
       throw new Error('Username already exists')
     }
 
+    // Reject a device that is already tied to another account before creating
+    // the new voter, so a failed policy check leaves no orphan account behind.
+    if (device) {
+      await deviceBindingService.assertDeviceAvailable(device.id)
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(input.password, 10)
 
@@ -107,11 +168,21 @@ export class AuthService {
       .insert(voters)
       .values({
         username: username, // Use name from masterlist
-        class: input.classId,
+        class: masterlistEntry.class,
         regNumber: input.regNumber,
         password: hashedPassword,
       })
       .returning()
+
+    // Mark the masterlist entry as claimed so the lookup can report it.
+    await db
+      .update(masterlist)
+      .set({ activated: true })
+      .where(eq(masterlist.id, masterlistEntry.id))
+
+    if (device) {
+      await deviceBindingService.bind(newVoter.id, device.id, device.platform)
+    }
 
     // Create JWT payload
     const jwtPayload: JwtPayload = {

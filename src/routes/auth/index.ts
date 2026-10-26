@@ -6,6 +6,7 @@ import resetPassword from './reset-password'
 import changePassword from './change-password'
 import refresh from './refresh'
 import logout from './logout'
+import webauthn from './webauthn'
 
 const auth = new Hono()
 
@@ -17,5 +18,6 @@ auth.route("/reset-password", resetPassword)
 auth.route("/change-password", changePassword)
 auth.route("/refresh", refresh)
 auth.route("/logout", logout)
+auth.route("/webauthn", webauthn)
 
 export default auth

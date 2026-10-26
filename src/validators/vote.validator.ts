@@ -4,13 +4,17 @@ import { z } from 'zod'
 export const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000'
 
 // Create vote validation schema
+// NOTE: currentHash / voteDataHash / prevHash are optional and ignored by the
+// server. The server computes them itself so clients cannot forge chain links.
+// `prepared` + `signature` are the RFC 9474 blind-signed token.
 export const createVoteSchema = z.object({
-  currentHash: z.string().min(1, 'Current hash is required'),
-  voteDataHash: z.string().min(1, 'Vote data hash (hash of ballot/candidate selection) is required'),
-  voteData: z.record(z.string(), z.string()).optional(), // Optional: raw vote data (officeId: candidateId) - will be encrypted server-side
-  tokenId: z.string().min(1, 'Token ID is required'),
+  currentHash: z.string().min(1).optional(),
+  voteDataHash: z.string().min(1).optional(),
+  voteData: z.record(z.string(), z.string()).optional(), // Optional: raw vote data (officeId: candidateId) - encrypted server-side
+  prepared: z.string().min(1, 'Prepared token is required'),
+  signature: z.string().min(1, 'Token signature is required'),
+  tokenId: z.string().min(1).optional(), // legacy
   election: z.string().uuid('Invalid election ID'),
-  // prevHash is optional - will be set automatically (genesis or last vote's hash)
   prevHash: z.string().optional(),
 })
 

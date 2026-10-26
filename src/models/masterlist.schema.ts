@@ -8,6 +8,8 @@ export const masterlist = pgTable('masterlist', {
     regNo: varchar('reg_no', {length: 255}).notNull(),
     class: uuid('class').references(() => classes.id).notNull(),
     activated: boolean('activated').default(false).notNull(),
+    /** Optional one-time claim code hash. When set, registration requires it. */
+    registrationCodeHash: varchar('registration_code_hash', {length: 255}),
     ...timestamps,
 })
 
