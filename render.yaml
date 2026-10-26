@@ -8,9 +8,11 @@
 # Render will apply this configuration to the existing service with that name.
 #
 # After syncing the Blueprint:
-#   1. Set FRONTEND_URL to your deployed web client.
-#   2. Optionally set the email / storage / WebAuthn values.
-#   3. The `preDeployCommand` creates/updates the schema automatically.
+#   1. Set DATABASE_URL to the database's External Database URL unless the
+#      service and database are in the same region (then use the internal URL).
+#   2. Set FRONTEND_URL to your deployed web client.
+#   3. Optionally set the email / storage / WebAuthn values.
+#   4. The `preDeployCommand` creates/updates the schema automatically.
 #
 # Paid web services stay warm; the first request after a deploy may take a few seconds.
 
@@ -31,11 +33,12 @@ services:
       - key: NODE_ENV
         value: production
 
-      # Render Postgres. The connection string is injected automatically.
+      # Render injects the *internal* connection string when using fromDatabase.
+      # That only works when the web service and database are in the same
+      # region/private network. If they are in different regions, paste the
+      # database's **External Database URL** here and set DATABASE_SSL=true.
       - key: DATABASE_URL
-        fromDatabase:
-          name: blindvote-db
-          property: connectionString
+        sync: false
 
       # Generate once and keep stable.
       - key: JWT_SECRET
@@ -78,7 +81,7 @@ services:
       - key: CHAIN_ENABLED
         value: "false"
       - key: DATABASE_SSL
-        value: "false"
+        value: "true"
 
 databases:
   - name: blindvote-db
