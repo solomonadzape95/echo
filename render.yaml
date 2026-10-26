@@ -12,13 +12,13 @@
 #   2. Optionally set the email / storage / WebAuthn values.
 #   3. The `preDeployCommand` creates/updates the schema automatically.
 #
-# Free web services sleep after inactivity; the first request can take 30–60s.
+# Paid web services stay warm; the first request after a deploy may take a few seconds.
 
 services:
   - type: web
     name: echo-fmir
     runtime: docker
-    plan: free
+    plan: 0.5c-512mb
     region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -82,6 +82,6 @@ services:
 
 databases:
   - name: blindvote-db
-    plan: free
+    plan: 0.5c-1g
     databaseName: blindvote
     user: blindvote
