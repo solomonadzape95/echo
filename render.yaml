@@ -83,16 +83,15 @@ services:
       - key: DATABASE_SSL
         value: "true"
 
-      # Native Android in-app updater. Upload an APK (e.g. a GitHub Release
-      # asset), then set its URL and version here.
+      # Native Android in-app updater.
       - key: APP_VERSION_CODE
-        sync: false
+        value: "2"
       - key: APP_VERSION_NAME
-        sync: false
+        value: "0.2.0"
       - key: APP_APK_URL
-        sync: false
+        value: "https://github.com/solomonadzape95/echo/releases/download/android-v0.2.0/blindvote-0.2.0.apk"
       - key: APP_RELEASE_NOTES
-        sync: false
+        value: "Registration lookup and claim codes, live and completed elections, and in-app update checks."
 
 databases:
   - name: blindvote-db
