@@ -83,6 +83,17 @@ services:
       - key: DATABASE_SSL
         value: "true"
 
+      # Native Android in-app updater. Upload an APK (e.g. a GitHub Release
+      # asset), then set its URL and version here.
+      - key: APP_VERSION_CODE
+        sync: false
+      - key: APP_VERSION_NAME
+        sync: false
+      - key: APP_APK_URL
+        sync: false
+      - key: APP_RELEASE_NOTES
+        sync: false
+
 databases:
   - name: blindvote-db
     plan: 0.5c-1g

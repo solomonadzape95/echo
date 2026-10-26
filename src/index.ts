@@ -23,6 +23,7 @@ import enumRoute from './routes/enum'
 import officeTemplate from './routes/office-template'
 import storage, { adminStorage } from './routes/storage'
 import ra from './routes/ra'
+import appRelease from './routes/app'
 
 const app = new Hono()
 
@@ -169,6 +170,7 @@ app.route('/office-templates', officeTemplate)
 app.route('/storage', storage)
 app.route('/admin/storage', adminStorage)
 app.route('/ra', ra)
+app.route('/app', appRelease)
 
 // For Bun's --hot flag, export server config instead of calling Bun.serve()
 // This allows hot reloading to work properly
