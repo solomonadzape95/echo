@@ -1,6 +1,8 @@
 import { Context } from 'hono'
 import { ballotService } from '../services/ballot.service'
+import { electionService } from '../services/election.service'
 import { checkEligibilityByDomain } from '../helpers/eligibility.helpers'
+import { getElectionPhase, electionPhaseMessage } from '../helpers/electionState.helpers'
 
 export class BallotController {
   /**
@@ -40,6 +42,17 @@ export class BallotController {
           return c.json({
             success: false,
             message: eligibility.reason || 'You are not eligible to vote in this election',
+          }, 403)
+        }
+
+        // A ballot must not be readable before the window opens or after it
+        // closes, even if the voter is eligible.
+        const election = await electionService.getById(electionId)
+        const phase = getElectionPhase(election)
+        if (phase !== 'active') {
+          return c.json({
+            success: false,
+            message: electionPhaseMessage(phase),
           }, 403)
         }
       }

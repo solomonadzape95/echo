@@ -8,6 +8,9 @@ const vote = new Hono()
 // GET /vote/verify-chain?electionId=xxx - Verify vote chain integrity (public: returns validity only)
 vote.get('/verify-chain', (c) => voteController.verifyChain(c))
 
+// GET /vote/chain-status?electionId=xxx - On-chain mirror status (public, anonymous data)
+vote.get('/chain-status', (c) => voteController.getChainStatus(c))
+
 // GET /vote/by-election?electionId=xxx - Chain-linking data for an authenticated voter (safe subset)
 vote.get('/by-election', authMiddleware, (c) => voteController.getByElection(c))
 

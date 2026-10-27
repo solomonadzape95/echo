@@ -12,6 +12,7 @@ import { voteEncryptionService } from './voteEncryption.service'
 import { blindSignatureService } from './blindSignature.service'
 import { raKeyService } from './raKey.service'
 import { checkEligibilityByDomain } from '../helpers/eligibility.helpers'
+import { getElectionPhase, electionPhaseMessage } from '../helpers/electionState.helpers'
 import { decodeBytes, verifySignature } from '../vendor/blindvote-shared'
 import crypto from 'crypto'
 
@@ -48,7 +49,14 @@ export class VoteService {
         throw new Error('Election not found')
       }
 
-      // 2. Verify eligibility by domain matching (class/department/faculty)
+      // 2. Voting must be open. This is enforced here, not only in the UI:
+      //    a valid token must not be usable after the end date.
+      const phase = getElectionPhase(election)
+      if (phase !== 'active') {
+        throw new Error(electionPhaseMessage(phase))
+      }
+
+      // 3. Verify eligibility by domain matching (class/department/faculty)
       const eligibility = await checkEligibilityByDomain(voterId, input.election)
 
       if (!eligibility.eligible) {
@@ -344,6 +352,7 @@ export class VoteService {
     }
 
     const eligibility = await checkEligibilityByDomain(voterId, electionId)
+    const phase = getElectionPhase(election)
 
     const [issuance] = await db
       .select()
@@ -354,6 +363,8 @@ export class VoteService {
     return {
       eligible: eligibility.eligible,
       hasVoted: !!issuance?.votedAt,
+      isOpen: phase === 'active',
+      phase,
     }
   }
 

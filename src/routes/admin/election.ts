@@ -23,6 +23,9 @@ election.get('/by-status', (c) => electionController.getByStatus(c))
 // GET /admin/election/by-domain - Get elections by domain
 election.get('/by-domain', (c) => electionController.getByDomain(c))
 
+// GET /admin/election/eligibility-preview?type=&domainId=
+election.get('/eligibility-preview', (c) => electionController.previewEligibility(c))
+
 // GET /admin/election/:id - Get election by ID
 election.get('/:id', (c) => electionController.getById(c))
 

@@ -1,5 +1,6 @@
 import { Context } from 'hono'
 import { voteService } from '../services/vote.service'
+import { chainService } from '../services/chain.service'
 import { createVoteSchema, voteIdSchema } from '../validators/vote.validator'
 
 /**
@@ -200,6 +201,51 @@ export class VoteController {
       return c.json({
         success: false,
         message: error.message || 'Failed to verify vote chain',
+      }, 500)
+    }
+  }
+
+  /**
+   * Public on-chain mirror status for one election.
+   *
+   * Returns only anonymous data: whether the bridge is enabled, the contract
+   * address, the commitment count and the published-tally flag. It never
+   * exposes a voter or a ballot choice.
+   */
+  async getChainStatus(c: Context) {
+    try {
+      const electionId = c.req.query('electionId')
+      if (!electionId) {
+        return c.json({ success: false, message: 'electionId query parameter is required' }, 400)
+      }
+
+      const info = chainService.info()
+      let onChain = null
+      let error: string | null = null
+
+      if (info.enabled) {
+        try {
+          onChain = await chainService.getElectionState(electionId)
+        } catch (cause) {
+          error = cause instanceof Error ? cause.message : 'Failed to read the on-chain ledger'
+        }
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          enabled: info.enabled,
+          ledgerAddress: info.ledgerAddress,
+          chainId: info.chainId,
+          electionId,
+          onChain,
+          error,
+        },
+      }, 200)
+    } catch (error: any) {
+      return c.json({
+        success: false,
+        message: error.message || 'Failed to read the on-chain ledger',
       }, 500)
     }
   }

@@ -1,17 +1,16 @@
 import { Hono } from 'hono'
 import { receiptController } from '../controllers/receipt.controller'
-import { authMiddleware } from '../middleware/auth.middleware'
+import { adminMiddleware } from '../middleware/admin.middleware'
 
 const receipt = new Hono()
 
 // GET /receipt?code=xxx - Get receipt by code with vote details (public - for verification)
 receipt.get('/', (c) => receiptController.getByCode(c))
 
-// GET /receipt/all - Get all receipts (public)
-receipt.get('/all', (c) => receiptController.getAll(c))
+// GET /receipt/all - Exposes every receipt code/vote hash. Admin only.
+receipt.get('/all', adminMiddleware, (c) => receiptController.getAll(c))
 
-// POST /receipt - Create new receipt (requires auth)
-receipt.post('/', authMiddleware, (c) => receiptController.create(c))
+// POST /receipt - Receipts are created by the vote service, never by clients.
+receipt.post('/', adminMiddleware, (c) => receiptController.create(c))
 
 export default receipt
-

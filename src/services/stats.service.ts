@@ -6,6 +6,7 @@ import { tokens } from '../models/token.schema'
 import { voters } from '../models/voter.schema'
 import { classes } from '../models/class.schema'
 import { issuances } from '../models/issuance.schema'
+import { getEligibleElectionsForVoter } from '../helpers/eligibility.helpers'
 
 export class StatsService {
   /**
@@ -50,7 +51,7 @@ export class StatsService {
         const [classCount] = await db
           .select({ count: sql<number>`count(*)` })
           .from(voters)
-          .where(eq(voters.class, election.domainId))
+          .where(and(eq(voters.class, election.domainId), eq(voters.disabled, false)))
         
         return Number(classCount?.count || 0)
 
@@ -60,7 +61,7 @@ export class StatsService {
           .select({ count: sql<number>`count(*)` })
           .from(voters)
           .innerJoin(classes, eq(voters.class, classes.id))
-          .where(eq(classes.department, election.domainId))
+          .where(and(eq(classes.department, election.domainId), eq(voters.disabled, false)))
         
         return Number(deptCount?.count || 0)
 
@@ -70,7 +71,7 @@ export class StatsService {
           .select({ count: sql<number>`count(*)` })
           .from(voters)
           .innerJoin(classes, eq(voters.class, classes.id))
-          .where(eq(classes.faculty, election.domainId))
+          .where(and(eq(classes.faculty, election.domainId), eq(voters.disabled, false)))
         
         return Number(facultyCount?.count || 0)
 
@@ -239,12 +240,16 @@ export class StatsService {
    * Get voting participation for a specific voter across all elections
    */
   async getVoterParticipation(voterId: string) {
-    // Get all elections
-    const allElections = await db
-      .select()
-      .from(elections)
+    // Only elections this voter is actually eligible for. Showing every
+    // election in the system would inflate the denominator and leak election
+    // names the voter cannot participate in.
+    const eligibleIds = new Set(await getEligibleElectionsForVoter(voterId))
 
-    // Check participation for each election
+    const allElections = (await db.select().from(elections)).filter((election) =>
+      eligibleIds.has(election.id)
+    )
+
+    // Check participation for each eligible election
     const participation = await Promise.all(
       allElections.map(async (election) => {
         const hasVoted = await this.hasVoterVoted(voterId, election.id)
@@ -267,7 +272,7 @@ export class StatsService {
       })
     )
 
-    const totalEligible = participation.filter(p => p.eligibleVoters > 0).length
+    const totalEligible = participation.length
     const totalVoted = participation.filter(p => p.hasVoted).length
 
     return {

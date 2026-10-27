@@ -75,6 +75,33 @@ export class ElectionController {
   }
 
   /**
+   * Preview eligible voters for a proposed election.
+   * GET /admin/election/eligibility-preview?type=&domainId=
+   */
+  async previewEligibility(c: Context) {
+    try {
+      const type = c.req.query('type') as 'class' | 'department' | 'faculty' | undefined
+      const domainId = c.req.query('domainId')
+
+      if (!type || !['class', 'department', 'faculty'].includes(type)) {
+        return c.json({ success: false, message: 'A valid election type is required' }, 400)
+      }
+
+      if (!domainId) {
+        return c.json({ success: false, message: 'domainId is required' }, 400)
+      }
+
+      const preview = await electionService.previewEligibility(type, domainId)
+      return c.json({ success: true, data: preview }, 200)
+    } catch (error: any) {
+      return c.json({
+        success: false,
+        message: error.message || 'Failed to preview eligibility',
+      }, 500)
+    }
+  }
+
+  /**
    * Get election by ID or slug
    * If user is authenticated (and not admin), check eligibility before returning
    * Admins can view all elections

@@ -49,6 +49,10 @@ export class AuthService {
       throw new Error('Registration number or password is incorrect')
     }
 
+    if (user.disabled) {
+      throw new Error('This account has been disabled. Contact an administrator.')
+    }
+
     // Claim this device for the account (no-op when already claimed).
     // Native clients always send a device id; the controller rejects requests
     // without one, so the lock cannot be skipped by simply omitting the header.

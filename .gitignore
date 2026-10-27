@@ -11,8 +11,12 @@ docs/
 dist/
 
 .DS_Store
+# Local database dumps created before a reset
+backups/
+
 # Compiled output accidentally emitted next to the TypeScript sources
 src/**/*.js
+tools/**/*.js
 drizzle.config.js
 
 tools/output/

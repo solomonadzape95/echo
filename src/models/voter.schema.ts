@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar} from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, boolean } from 'drizzle-orm/pg-core'
 import { classes } from './class.schema'
 import { timestamps } from '../helpers/colums.helpers'
 
@@ -9,5 +9,6 @@ export const voters = pgTable('voters', {
     class: uuid('class').references(() => classes.id).notNull(),
     password: varchar('password', {length: 255}).notNull(),
     profilePicture: varchar('profile_picture', {length: 500}),
+    disabled: boolean('disabled').default(false).notNull(),
     ...timestamps,
 })

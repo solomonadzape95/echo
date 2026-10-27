@@ -50,6 +50,10 @@ export async function checkEligibilityByDomain(
     return { eligible: false, reason: 'Voter not found' }
   }
 
+  if (voter.disabled) {
+    return { eligible: false, reason: 'This voter account has been disabled' }
+  }
+
   // 3. Get voter's class with department and faculty
   const [voterClass] = await db
     .select()

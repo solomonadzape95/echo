@@ -57,10 +57,10 @@ export class ResultService {
 
     // 4. Get all votes for this election
     const allVotes = await voteService.getByElection(electionId)
-    
-    if (allVotes.length === 0) {
-      throw new Error('No votes found for this election')
-    }
+
+    // A completed election with no ballots is still a valid result: every
+    // candidate gets zero votes. This lets automatic publication produce an
+    // empty-but-visible result page instead of failing.
 
     // 5. Get all offices for this election
     const electionOffices = await db

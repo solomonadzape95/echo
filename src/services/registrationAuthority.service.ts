@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import { elections } from '../models/election.schema'
 import { issuances } from '../models/issuance.schema'
 import { checkEligibilityByDomain } from '../helpers/eligibility.helpers'
+import { getElectionPhase, electionPhaseMessage } from '../helpers/electionState.helpers'
 import { raKeyService } from './raKey.service'
 
 /**
@@ -36,7 +37,14 @@ export class RegistrationAuthorityService {
       throw new Error('Election not found')
     }
 
-    // 2. Voter must be eligible (domain matching)
+    // 2. Voting must be open. Dates are authoritative because the stored
+    //    status is refreshed lazily when election lists are fetched.
+    const phase = getElectionPhase(election)
+    if (phase !== 'active') {
+      throw new Error(electionPhaseMessage(phase))
+    }
+
+    // 3. Voter must be eligible (domain matching)
     const eligibility = await checkEligibilityByDomain(voterId, electionId)
     if (!eligibility.eligible) {
       throw new Error(
@@ -44,7 +52,7 @@ export class RegistrationAuthorityService {
       )
     }
 
-    // 3. One signature per voter per election. A voter who has already voted
+    // 4. One signature per voter per election. A voter who has already voted
     //    cannot be re-authorised. Before voting they may re-request a signature
     //    (e.g. lost token); the voted_at check at ingestion still guarantees a
     //    single vote.
@@ -58,11 +66,11 @@ export class RegistrationAuthorityService {
       throw new Error('You have already voted in this election')
     }
 
-    // 4. Blind-sign. The RA never learns the token.
+    // 5. Blind-sign. The RA never learns the token.
     const { privateKey } = await raKeyService.getActiveKey()
     const blindSignature = await blindSign(privateKey, decodeBytes(blindedMsgB64))
 
-    // 5. Record the anonymous issuance marker once. The unique index on
+    // 6. Record the anonymous issuance marker once. The unique index on
     //    (election, voter) plus ON CONFLICT makes concurrent first requests
     //    idempotent instead of creating duplicate issuance rows.
     if (!issuance) {

@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/db'
 import { admins } from '../models/admin.schema'
 import { elections } from '../models/election.schema'
@@ -288,7 +288,37 @@ export class GovernanceService {
           .from(governanceProposals)
           .orderBy(desc(governanceProposals.createdAt))
 
-    return rows
+    if (rows.length === 0) return []
+
+    // The console renders each proposal's signers, so include the approvals in
+    // the list response too (the detail endpoint already does this).
+    const approvals = await db
+      .select({
+        proposal: governanceApprovals.proposal,
+        admin: governanceApprovals.admin,
+        username: admins.username,
+        signature: governanceApprovals.signature,
+        createdAt: governanceApprovals.createdAt,
+      })
+      .from(governanceApprovals)
+      .innerJoin(admins, eq(governanceApprovals.admin, admins.id))
+      .where(inArray(governanceApprovals.proposal, rows.map((row) => row.id)))
+
+    const approvalsByProposal = new Map<string, typeof approvals>()
+    for (const approval of approvals) {
+      const list = approvalsByProposal.get(approval.proposal) ?? []
+      list.push(approval)
+      approvalsByProposal.set(approval.proposal, list)
+    }
+
+    return rows.map((proposal) => {
+      const proposalApprovals = approvalsByProposal.get(proposal.id) ?? []
+      return {
+        ...proposal,
+        approvals: proposalApprovals.map(({ proposal: _proposal, ...approval }) => approval),
+        approvalCount: new Set(proposalApprovals.map((a) => a.admin)).size,
+      }
+    })
   }
 }
 

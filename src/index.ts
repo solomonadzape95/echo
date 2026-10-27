@@ -24,6 +24,9 @@ import officeTemplate from './routes/office-template'
 import storage, { adminStorage } from './routes/storage'
 import ra from './routes/ra'
 import appRelease from './routes/app'
+import notifications from './routes/notifications'
+import { electionService } from './services/election.service'
+import { chainService } from './services/chain.service'
 
 const app = new Hono()
 
@@ -169,12 +172,59 @@ app.route('/enum', enumRoute)
 app.route('/office-templates', officeTemplate)
 app.route('/storage', storage)
 app.route('/admin/storage', adminStorage)
+app.route('/notifications', notifications)
 app.route('/ra', ra)
 app.route('/app', appRelease)
 
 // For Bun's --hot flag, export server config instead of calling Bun.serve()
 // This allows hot reloading to work properly
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3001
+
+// Close elections and publish results even when nobody is using the app.
+// Requests also trigger this, but a finished election should publish without
+// waiting for someone to open a page.
+const electionTickMs = Number(
+  process.env.ELECTION_STATUS_INTERVAL_MS ?? process.env.ELECTION_TICK_MS ?? 60_000
+)
+const scheduler = globalThis as typeof globalThis & {
+  __echoElectionTicker?: ReturnType<typeof setInterval>
+  __echoStatusTimer?: ReturnType<typeof setInterval>
+  __echoChainTicker?: ReturnType<typeof setInterval>
+}
+
+if (
+  process.env.ELECTION_TICKER !== 'false' &&
+  electionTickMs > 0 &&
+  !scheduler.__echoElectionTicker &&
+  !scheduler.__echoStatusTimer
+) {
+  const tick = () => {
+    electionService.updateElectionStatuses().catch((error) => {
+      console.error('[ELECTION TICKER] Failed to refresh election statuses:', error?.message || error)
+    })
+  }
+  // Catch elections that ended while the server was down.
+  tick()
+  const timer = setInterval(tick, electionTickMs)
+  scheduler.__echoElectionTicker = timer
+  scheduler.__echoStatusTimer = timer
+  console.log(`⏱️  Election ticker running every ${electionTickMs}ms`)
+}
+
+const chainSyncMs = Number(process.env.CHAIN_SYNC_INTERVAL_MS ?? 120_000)
+if (
+  process.env.CHAIN_SYNC_TICKER !== 'false' &&
+  chainSyncMs > 0 &&
+  chainService.isEnabled() &&
+  !scheduler.__echoChainTicker
+) {
+  scheduler.__echoChainTicker = setInterval(() => {
+    chainService.syncPendingElections().catch((error) => {
+      console.error('[CHAIN SYNC] Failed:', error?.message || error)
+    })
+  }, chainSyncMs)
+  console.log(`⛓️  Chain sync running every ${chainSyncMs}ms`)
+}
 
 console.log(`🚀 Server starting on http://localhost:${port}`)
 

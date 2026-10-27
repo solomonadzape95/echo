@@ -10,8 +10,13 @@ import { votes } from '../models/vote.schema'
 import { tokens } from '../models/token.schema'
 import { issuances } from '../models/issuance.schema'
 import { candidates } from '../models/candidate.schema'
+import { admins } from '../models/admin.schema'
+import { ledgerAnchors } from '../models/ledgerAnchor.schema'
+import { governanceApprovals, governanceProposals } from '../models/governance.schema'
 import type { CreateElectionInput, UpdateElectionInput } from '../validators/election.validator'
 import { generateSlug, generateUniqueSlug } from '../helpers/slug.helpers'
+import { resultService } from './result.service'
+import { notificationService } from './notification.service'
 
 export class ElectionService {
   /**
@@ -101,7 +106,7 @@ export class ElectionService {
     const now = new Date()
     
     // Update pending elections that should be active
-    await db
+    const activated = await db
       .update(elections)
       .set({ status: 'active' })
       .where(
@@ -110,9 +115,25 @@ export class ElectionService {
           lte(elections.startDate, now)
         )
       )
+      .returning({
+        id: elections.id,
+        name: elections.name,
+        endDate: elections.endDate,
+        slug: elections.slug,
+      })
+
+    for (const election of activated) {
+      await notificationService
+        .notifyStarted(election.id, election.name, election.endDate, election.slug)
+        .catch((error) => {
+          console.error('[ELECTION SERVICE] Failed to notify start:', error?.message || error)
+        })
+    }
     
-    // Update active elections that should be completed
-    await db
+    // Close elections whose end date has passed. `returning` makes this safe
+    // when two requests race: only the request that actually flips the status
+    // receives the rows and publishes the results.
+    const completed = await db
       .update(elections)
       .set({ status: 'completed' })
       .where(
@@ -121,6 +142,72 @@ export class ElectionService {
           lte(elections.endDate, now)
         )
       )
+      .returning({ id: elections.id, name: elections.name, slug: elections.slug })
+
+    for (const election of completed) {
+      let published = false
+
+      if (process.env.AUTO_PUBLISH_RESULTS !== 'false') {
+        try {
+          if (!(await this.hasResults(election.id))) {
+            const adminId = await this.systemAdminId()
+            if (!adminId) {
+              console.warn('[ELECTION SERVICE] No admin available to publish results for', election.id)
+            } else {
+              const summary = await resultService.calculateResults(election.id, adminId)
+              console.log(
+                `[ELECTION SERVICE] Auto-published results for ${election.name}: ` +
+                  `${summary.validVotes} valid / ${summary.invalidVotes} invalid, ` +
+                  `${summary.resultsCount} result rows`
+              )
+              published = true
+            }
+          } else {
+            published = true
+          }
+        } catch (error: any) {
+          // A failed publication must not break the election list. Keep the
+          // election completed and let an admin retry from the console.
+          console.error(
+            `[ELECTION SERVICE] Auto-publish failed for ${election.name} (${election.id}):`,
+            error.message || error
+          )
+        }
+      }
+
+      try {
+        if (published) {
+          await notificationService.notifyResultsPublished(
+            election.id,
+            election.name,
+            election.slug
+          )
+        } else {
+          await notificationService.notifyEnded(election.id, election.name, election.slug)
+        }
+      } catch (error: any) {
+        console.error('[ELECTION SERVICE] Failed to notify completion:', error?.message || error)
+      }
+    }
+  }
+
+  /** Whether results have already been stored for this election. */
+  private async hasResults(electionId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(results)
+      .where(eq(results.election, electionId))
+    return Number(row?.count ?? 0) > 0
+  }
+
+  /** System actor used as `calculatedBy` for automatic publication. */
+  private async systemAdminId(): Promise<string | null> {
+    const [admin] = await db
+      .select({ id: admins.id })
+      .from(admins)
+      .where(eq(admins.role, 'super_admin'))
+      .limit(1)
+    return admin?.id ?? null
   }
 
   /**
@@ -147,8 +234,8 @@ export class ElectionService {
       .where(eq(voters.id, voterId))
       .limit(1)
 
-    if (!voter || !voter.class) {
-      // Voter has no class - return empty array
+    if (!voter || !voter.class || voter.disabled) {
+      // Voter has no class or has been disabled - return empty array
       return []
     }
 
@@ -177,6 +264,91 @@ export class ElectionService {
       )
 
     return eligibleElections
+  }
+
+  /**
+   * Preview who would be eligible for an election before it is created.
+   */
+  async previewEligibility(type: 'class' | 'department' | 'faculty', domainId: string) {
+    if (type === 'class') {
+      const rows = await db
+        .select({
+          classId: classes.id,
+          level: classes.level,
+          department: classes.department,
+          faculty: classes.faculty,
+          voterId: voters.id,
+        })
+        .from(voters)
+        .innerJoin(classes, eq(voters.class, classes.id))
+        .where(and(eq(voters.class, domainId), eq(voters.disabled, false)))
+
+      const classRow = rows[0]
+      return {
+        eligibleVoters: rows.length,
+        classCount: rows.length > 0 ? 1 : 0,
+        classes: classRow
+          ? [{
+              id: classRow.classId,
+              level: classRow.level,
+              department: classRow.department,
+              faculty: classRow.faculty,
+              voters: rows.length,
+            }]
+          : [],
+      }
+    }
+
+    const rows = await db
+      .select({
+        classId: classes.id,
+        level: classes.level,
+        department: classes.department,
+        faculty: classes.faculty,
+        voterId: voters.id,
+      })
+      .from(voters)
+      .innerJoin(classes, eq(voters.class, classes.id))
+      .where(
+        and(
+          type === 'department'
+            ? eq(classes.department, domainId as any)
+            : eq(classes.faculty, domainId as any),
+          eq(voters.disabled, false)
+        )
+      )
+
+    const grouped = new Map<string, {
+      id: string
+      level: string
+      department: string
+      faculty: string
+      voters: number
+    }>()
+
+    for (const row of rows) {
+      const existing = grouped.get(row.classId)
+      if (existing) {
+        existing.voters++
+      } else {
+        grouped.set(row.classId, {
+          id: row.classId,
+          level: row.level,
+          department: row.department,
+          faculty: row.faculty,
+          voters: 1,
+        })
+      }
+    }
+
+    return {
+      eligibleVoters: rows.length,
+      classCount: grouped.size,
+      classes: [...grouped.values()].sort(
+        (a, b) =>
+          a.department.localeCompare(b.department) || a.level.localeCompare(b.level)
+      ),
+    }
   }
 
   /**
@@ -409,21 +581,41 @@ export class ElectionService {
         .delete(issuances)
         .where(eq(issuances.election, id))
 
-      // 6. Delete candidates (depends on office, which depends on election)
+      // 6. Delete governance approvals and proposals tied to this election
+      const proposals = await tx
+        .select({ id: governanceProposals.id })
+        .from(governanceProposals)
+        .where(eq(governanceProposals.election, id))
+
+      if (proposals.length > 0) {
+        await tx
+          .delete(governanceApprovals)
+          .where(inArray(governanceApprovals.proposal, proposals.map((p) => p.id)))
+        await tx
+          .delete(governanceProposals)
+          .where(eq(governanceProposals.election, id))
+      }
+
+      // 7. Delete the signed chain anchor (depends on election)
+      await tx
+        .delete(ledgerAnchors)
+        .where(eq(ledgerAnchors.election, id))
+
+      // 8. Delete candidates (depends on office, which depends on election)
       if (officeIds.length > 0) {
         await tx
           .delete(candidates)
           .where(inArray(candidates.office, officeIds))
       }
 
-      // 7. Delete offices (depends on election)
+      // 9. Delete offices (depends on election)
       if (officeIds.length > 0) {
         await tx
           .delete(offices)
           .where(eq(offices.election, id))
       }
 
-      // 8. Finally, delete the election itself
+      // 10. Finally, delete the election itself
       await tx
         .delete(elections)
         .where(eq(elections.id, id))
