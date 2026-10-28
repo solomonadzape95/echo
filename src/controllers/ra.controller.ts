@@ -1,5 +1,6 @@
 import { Context } from 'hono'
 import { registrationAuthorityService } from '../services/registrationAuthority.service'
+import { demoBlindSignatureService } from '../services/demoBlindSignature.service'
 import { raSignSchema } from '../validators/ra.validator'
 
 export class RAController {
@@ -16,6 +17,47 @@ export class RAController {
       return c.json(
         { success: false, message: error.message || 'Failed to load RA public key' },
         500
+      )
+    }
+  }
+
+  /**
+   * GET /ra/demo/public-key
+   * Public. Ephemeral key for the blind-signature playground only.
+   */
+  async getDemoPublicKey(c: Context) {
+    try {
+      const data = await demoBlindSignatureService.getPublicKey()
+      return c.json({ success: true, data }, 200)
+    } catch (error: any) {
+      return c.json(
+        { success: false, message: error.message || 'Failed to load demo key' },
+        500
+      )
+    }
+  }
+
+  /**
+   * POST /ra/demo/sign
+   * Public. Signs a blinded message with the ephemeral demo key. Never records
+   * an issuance and never touches the real RA key.
+   */
+  async demoSign(c: Context) {
+    try {
+      const body = await c.req.json()
+      if (typeof body?.blindedMsg !== 'string' || body.blindedMsg.length === 0) {
+        return c.json(
+          { success: false, message: 'blindedMsg is required' },
+          400
+        )
+      }
+
+      const data = await demoBlindSignatureService.sign(body.blindedMsg)
+      return c.json({ success: true, data }, 200)
+    } catch (error: any) {
+      return c.json(
+        { success: false, message: error.message || 'Failed to sign demo message' },
+        400
       )
     }
   }
