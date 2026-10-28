@@ -85,13 +85,13 @@ services:
 
       # Native Android in-app updater.
       - key: APP_VERSION_CODE
-        value: "2"
+        value: "4"
       - key: APP_VERSION_NAME
-        value: "0.2.0"
+        value: "0.4.0"
       - key: APP_APK_URL
-        value: "https://github.com/solomonadzape95/echo/releases/download/android-v0.2.0/blindvote-0.2.0.apk"
+        value: "https://github.com/solomonadzape95/echo/releases/download/android-v0.4.0/blindvote-0.4.0-local.apk"
       - key: APP_RELEASE_NOTES
-        value: "Registration lookup and claim codes, live and completed elections, and in-app update checks."
+        value: "Off uses the hosted Render backend; on uses your PC. Includes on-chain ledger status and automatic results."
 
 databases:
   - name: blindvote-db
