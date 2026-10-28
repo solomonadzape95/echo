@@ -27,6 +27,12 @@ import appRelease from './routes/app'
 import notifications from './routes/notifications'
 import { electionService } from './services/election.service'
 import { chainService } from './services/chain.service'
+import { ensureSchema } from './db/ensureSchema'
+
+// Safety net for hosted databases that missed a pre-deploy migration.
+await ensureSchema().catch((error) => {
+  console.error('[SCHEMA] Could not ensure admin schema:', error?.message || error)
+})
 
 const app = new Hono()
 
